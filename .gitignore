@@ -1,0 +1,22 @@
+# data (see data/raw/DATA_DOWNLOAD_GUIDE.md)
+data/raw/*
+!data/raw/DATA_DOWNLOAD_GUIDE.md
+data/processed/*
+!data/processed/.gitkeep
+# generated outputs
+results/**/*.tex
+results/**/*.csv
+code/03_figures/output/
+figs/
+logs/*
+!logs/.gitkeep
+# R / IDE
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+renv/library/
+renv/staging/
+.DS_Store
+.idea/
+.venv/
