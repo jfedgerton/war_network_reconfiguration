@@ -47,8 +47,10 @@ Script notes:
 | `02_analysis/07` | multiverse | ~200k specifications; several hours |
 | `02_analysis/10` | random / sliding year drops | ~10 min |
 | `02_analysis/14` | IGO membership-share windows | needs `igoR` |
+| `02_analysis/24` | Appendix: CINC without mobilization; pre/post-war windows | ~7 min (1,000 bootstrap draws) |
 | `02_analysis/22` | threshold / Markov-switching | needs `tsDyn`, `MSwM`; not in the manuscript |
 
 ## Change log
 
 - **2026-09-26.** Headline system-level DV switched from KL to JS divergence in scripts 01, 04, 05, 10, 11, 13, 14, 15, 16, 22 and `export_figure_tables_appendix.R`. Scripts 13 and 14, which compute the divergence directly, now compute JS. The multiverse (07) already contains both measures and was not rerun.
+- **2026-09-26.** Added `24_robustness_cinc_nonmobilization.R` (realized-power mediation with non-mobilization CINC and pre/post-war capability windows).
