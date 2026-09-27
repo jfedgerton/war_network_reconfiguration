@@ -3912,7 +3912,7 @@ meta_df <- specs |>
 
 # Reference = the MAIN specification for each hypothesis, so the intercept IS the
 # main model and every coefficient reads as a deviation from it:
-#   H1 (system) : OLS_lagged, KL divergence, raw, unweighted, main layers, All MIDs
+#   H1 (system) : OLS_lagged, JS divergence, raw, unweighted, main layers, All MIDs
 #   H2/H3 (state): FE_full_ccode_year (state+year TWFE = "model 4"), Churn, raw,
 #                  unweighted, main layers, All MIDs
 relevel_to <- function(x, ref) {
@@ -3931,7 +3931,7 @@ tidy_wald <- function(m) {
 
 run_meta <- function(df, hyp) {
   ref_model   <- if (hyp == "H1") "OLS_lagged" else "FE_full_ccode_year"
-  ref_measure <- if (hyp == "H1") "KL divergence" else "Churn"
+  ref_measure <- if (hyp == "H1") "JS divergence" else "Churn"  # JS = main-text DV (2026-09-26)
   
   df <- df |> mutate(
     model_f   = relevel_to(model, ref_model),
