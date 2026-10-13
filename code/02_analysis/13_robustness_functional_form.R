@@ -84,8 +84,9 @@ cat("Loading data...\n")
 
 # Main-text baseline: lagged IVs, plain OLS, no post_1945.
 system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
-  filter(!is.na(js_divergence)) |>
   arrange(year) |>
+  # [2026-10-12] conflict lags are built BEFORE dropping years without JS, so 1817 keeps its 1816 conflict
+  (\(d) { stopifnot(all(diff(d$year) == 1)); d })() |>   # consecutive years
   mutate(
     log_mid_count       = log1p(mid_count),
     log_fatal_mid_count = log1p(fatal_mid_count),
@@ -94,7 +95,7 @@ system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
     fatal_mid_count_lag1     = dplyr::lag(fatal_mid_count,     1),
     log_fatal_mid_count_lag1 = dplyr::lag(log_fatal_mid_count, 1)
   ) |>
-  filter(!is.na(mid_count_lag1))
+  filter(!is.na(mid_count_lag1), !is.na(js_divergence))
 
 state_churn <- readRDS(file.path(OUTPUT_DIR, "state_network_churn.rds"))
 dyad_data   <- readRDS(file.path(OUTPUT_DIR, "dyad_year_network_layers.rds"))
@@ -178,15 +179,13 @@ if (needs_prep) {
            major_power = replace_na(major_power, 0))
 }
 
-# --- Partner-war control routing by IV severity ---
-# Non-fatal IVs (any MID exposure) -> partner_war_frac_weighted
-# Fatal IVs (battle-death-bearing MIDs) -> partner_fatal_war_frac_weighted
-# State-level churn regressions in this script use the tie-WEIGHTED partner-
-# war exposure (alliance-strength-weighted share of partners at war), which is
-# the harmonized robustness-script default. The unweighted variants are
-# reserved for the main 02_state_level_analysis.R headline tables.
-CTRL_MID   <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_FATAL <- "partner_fatal_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# --- State-level control set ---
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+# CTRL_MID and CTRL_FATAL are now identical (democracy + autocracy + cinc +
+# major_power + is_isolated_t1); both names and ctrl_for_iv() are kept so the
+# call sites are unchanged.
+CTRL_MID   <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+CTRL_FATAL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 ctrl_for_iv <- function(iv) if (grepl("fatal", iv)) CTRL_FATAL else CTRL_MID
 
 state_churn <- state_churn |> mutate(log_churn = log1p(churn))
@@ -195,6 +194,38 @@ system_data <- system_data |> mutate(log_js_divergence = log1p(js_divergence))
 state_churn <- state_churn |>
   mutate(log_mid_onset_count       = log1p(mid_onset_count),
          log_fatal_mid_onset_count = log1p(fatal_mid_onset_count))
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
+state_churn <- state_churn |>
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn[c("ccode", "year")]))
 
 # ============================================================
 # (A) BINNED TREATMENT
@@ -210,15 +241,16 @@ bin_counts <- function(x) {
 }
 
 # STATE LEVEL — bins for MID (total) and fatal MID, each in its own model
-bin_state_mid   <- state_churn |> mutate(iv_bin = bin_counts(mid_onset_count))
-bin_state_fatal <- state_churn |> mutate(iv_bin = bin_counts(fatal_mid_onset_count))
+# [2026-10-12] bins built from the t-1 onset counts (headline timing)
+bin_state_mid   <- state_churn |> mutate(iv_bin = bin_counts(onset_lag1))
+bin_state_fatal <- state_churn |> mutate(iv_bin = bin_counts(fatal_onset_lag1))
 
 # Two formulas: bins built from mid_onset_count use CTRL_MID; bins built
 # from fatal_mid_onset_count use CTRL_FATAL.
 f_state_bin_mid   <- as.formula(paste0(
-  "log_churn ~ iv_bin + ", CTRL_MID,   " | ccode + year"))
+  "churn ~ iv_bin + ", CTRL_MID,   " | ccode + year"))
 f_state_bin_fatal <- as.formula(paste0(
-  "log_churn ~ iv_bin + ", CTRL_FATAL, " | ccode + year"))
+  "churn ~ iv_bin + ", CTRL_FATAL, " | ccode + year"))
 
 m_state_bin_mid   <- feols(f_state_bin_mid,   data = bin_state_mid,
                              cluster = ~ ccode + year)
@@ -236,7 +268,7 @@ bin_counts_sys <- function(x) {
 bin_sys_mid   <- system_data |> mutate(iv_bin = bin_counts_sys(mid_count_lag1))
 bin_sys_fatal <- system_data |> mutate(iv_bin = bin_counts_sys(fatal_mid_count_lag1))
 
-f_sys_bin <- log_js_divergence ~ iv_bin +
+f_sys_bin <- js_divergence ~ iv_bin +
   log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) +
   poly(year, 2)
 
@@ -261,8 +293,8 @@ extract_bin_coefs <- function(m, level, iv_family_label) {
 }
 
 bin_df <- bind_rows(
-  extract_bin_coefs(m_state_bin_mid,   "state",  "MID onset"),
-  extract_bin_coefs(m_state_bin_fatal, "state",  "Fatal MID onset"),
+  extract_bin_coefs(m_state_bin_mid,   "state",  "MID onset (t-1)"),
+  extract_bin_coefs(m_state_bin_fatal, "state",  "Fatal MID onset (t-1)"),
   extract_bin_coefs(m_sys_bin_mid,     "system", "MID count"),
   extract_bin_coefs(m_sys_bin_fatal,   "system", "Fatal MID count")
 )
@@ -361,41 +393,44 @@ for (yr in years_sorted) {
   churn_long <- bind_rows(churn_long, churn_yr)
 }
 
-# Merge back: add 5-year rolling sums for mid and fatal mid counts
+# Merge back: add 5-year sums (years t-4..t) of MID and fatal MID counts.
+# [2026-10-12] Sums are built by CALENDAR year on the full annual series (system) and the full COW
+# state-year universe (state), and only where all five years exist. The old row-based rollapplyr ran after
+# filtering to defined long differences, so after a gap the five rows could span more than five years.
+sys_win <- bind_rows(lapply(0:(HORIZON - 1), function(k)
+  system_data |> transmute(year = year + k, mid_count, fatal_mid_count))) |>
+  group_by(year) |>
+  summarise(n_yrs = n(), mid_sum5 = sum(mid_count), fatal_mid_sum5 = sum(fatal_mid_count), .groups = "drop") |>
+  filter(n_yrs == HORIZON) |>
+  select(-n_yrs)
 sys_long <- system_data |>
   left_join(kl_long, by = "year") |>
   filter(!is.na(js_divergence_long)) |>
+  left_join(sys_win, by = "year") |>
   arrange(year) |>
   mutate(
     log_js_divergence_long = log1p(js_divergence_long),
-    mid_sum5       = zoo::rollapplyr(mid_count,       HORIZON, sum,
-                                       partial = FALSE, fill = NA),
-    fatal_mid_sum5 = zoo::rollapplyr(fatal_mid_count, HORIZON, sum,
-                                       partial = FALSE, fill = NA),
     log_mid_sum5       = log1p(mid_sum5),
     log_fatal_mid_sum5 = log1p(fatal_mid_sum5)
   ) |>
   filter(!is.na(mid_sum5))
 
+st_win <- bind_rows(lapply(0:(HORIZON - 1), function(k)
+  onset_univ |> transmute(ccode, year = year + k, u_onset, u_fatal_onset))) |>
+  group_by(ccode, year) |>
+  summarise(n_yrs = n(), mid_onset_sum5 = sum(u_onset), fatal_onset_sum5 = sum(u_fatal_onset),
+            .groups = "drop") |>
+  filter(n_yrs == HORIZON) |>
+  select(-n_yrs)
 st_long <- state_churn |>
   left_join(churn_long, by = c("ccode", "year")) |>
   filter(!is.na(churn_long)) |>
   mutate(log_churn_long = log1p(churn_long)) |>
-  arrange(ccode, year) |>
-  group_by(ccode) |>
+  left_join(st_win, by = c("ccode", "year")) |>
   mutate(
-    mid_onset_sum5       = zoo::rollapplyr(mid_onset_count,       HORIZON,
-                                             sum, partial = FALSE, fill = NA),
-    fatal_onset_sum5     = zoo::rollapplyr(fatal_mid_onset_count, HORIZON,
-                                             sum, partial = FALSE, fill = NA),
     log_mid_onset_sum5   = log1p(mid_onset_sum5),
-    log_fatal_onset_sum5 = log1p(fatal_onset_sum5),
-    # 5-year analog of weighted partner-war exposure: mean exposure over the
-    # window (a fraction in [0,1], matching the annual measure's scale).
-    pwe_mean5            = zoo::rollapplyr(partner_war_frac_weighted, HORIZON,
-                                             mean, partial = FALSE, fill = NA)
+    log_fatal_onset_sum5 = log1p(fatal_onset_sum5)
   ) |>
-  ungroup() |>
   filter(!is.na(mid_onset_sum5))
 
 # 4-IV sweep at each level × annual vs 5-year long difference DV
@@ -411,11 +446,12 @@ sys_ivs_long <- list(
   list(col = "fatal_mid_sum5",     label = "Fatal MID count (5-yr sum)"),
   list(col = "log_fatal_mid_sum5", label = "log(1 + Fatal MID count) (5-yr sum)")
 )
+# [2026-10-12] annual state IVs at t-1 (headline timing); the 5-year sums below are unchanged
 state_ivs_ann <- list(
-  list(col = "mid_onset_count",           label = "MID onset"),
-  list(col = "log_mid_onset_count",       label = "log(1 + MID onset)"),
-  list(col = "fatal_mid_onset_count",     label = "Fatal MID onset"),
-  list(col = "log_fatal_mid_onset_count", label = "log(1 + Fatal MID onset)")
+  list(col = "onset_lag1",           label = "MID onset (t-1)"),
+  list(col = "log_onset_lag1",       label = "log(1 + MID onset) (t-1)"),
+  list(col = "fatal_onset_lag1",     label = "Fatal MID onset (t-1)"),
+  list(col = "log_fatal_onset_lag1", label = "log(1 + Fatal MID onset) (t-1)")
 )
 state_ivs_long <- list(
   list(col = "mid_onset_sum5",       label = "MID onset"),
@@ -444,21 +480,21 @@ ctrl_sys  <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) + po
 
 # System × annual (plain lm to match main text; IV already lagged)
 long_sys_ann <- purrr::map_dfr(sys_ivs_ann, function(iv) {
-  f <- as.formula(paste0("log_js_divergence ~ ", iv$col, " + ", ctrl_sys))
+  f <- as.formula(paste0("js_divergence ~ ", iv$col, " + ", ctrl_sys))
   fit_and_row(f, system_data, engine = "lm",
               iv_col = iv$col, iv_label = iv$label,
               level = "system", spec = "Annual DV")
 })
 # System × long-diff (logged 5-year-difference KL on logged 5-yr sums)
 long_sys_long <- purrr::map_dfr(sys_ivs_long, function(iv) {
-  f <- as.formula(paste0("log_js_divergence_long ~ ", iv$col, " + ", ctrl_sys))
+  f <- as.formula(paste0("js_divergence_long ~ ", iv$col, " + ", ctrl_sys))
   fit_and_row(f, sys_long, engine = "lm",
               iv_col = iv$col, iv_label = iv$label,
               level = "system", spec = "5-year long difference")
 })
 # State × annual
 long_st_ann <- purrr::map_dfr(state_ivs_ann, function(iv) {
-  f <- as.formula(paste0("log_churn ~ ", iv$col, " + ",
+  f <- as.formula(paste0("churn ~ ", iv$col, " + ",
                           ctrl_for_iv(iv$col), " | ccode + year"))
   fit_and_row(f, state_churn, cluster_spec = ~ ccode + year,
               iv_col = iv$col, iv_label = iv$label,
@@ -466,34 +502,15 @@ long_st_ann <- purrr::map_dfr(state_ivs_ann, function(iv) {
 })
 # State × long-diff
 long_st_long <- purrr::map_dfr(state_ivs_long, function(iv) {
-  f <- as.formula(paste0("log_churn_long ~ ", iv$col, " + ",
+  f <- as.formula(paste0("churn_long ~ ", iv$col, " + ",
                           ctrl_for_iv(iv$col), " | ccode + year"))
   fit_and_row(f, st_long, cluster_spec = ~ ccode + year,
               iv_col = iv$col, iv_label = iv$label,
               level = "state", spec = "5-year long difference")
 })
 
-# Weighted partner-war exposure as focal IV (annual + 5-year long diff).
-# Controls drop partner_war_frac_weighted (it is the IV here) but keep the
-# conflict IV so the model matches the main H3 specification.
-long_st_pwe_ann <- fit_and_row(
-  as.formula(paste0("log_churn ~ partner_war_frac_weighted + log_mid_onset_count + ",
-                    "democracy + autocracy + cinc + major_power + is_isolated_t1",
-                    " | ccode + year")),
-  state_churn, cluster_spec = ~ ccode + year,
-  iv_col = "partner_war_frac_weighted", iv_label = "Partner War Exposure",
-  level = "state", spec = "Annual DV")
-long_st_pwe_long <- fit_and_row(
-  as.formula(paste0("log_churn_long ~ pwe_mean5 + log_mid_onset_sum5 + ",
-                    "democracy + autocracy + cinc + major_power + is_isolated_t1",
-                    " | ccode + year")),
-  st_long, cluster_spec = ~ ccode + year,
-  iv_col = "pwe_mean5", iv_label = "Partner War Exposure",
-  level = "state", spec = "5-year long difference")
-
 longdiff_df <- bind_rows(long_sys_ann, long_sys_long,
-                          long_st_ann,  long_st_long,
-                          long_st_pwe_ann, long_st_pwe_long)
+                          long_st_ann,  long_st_long)
 
 write_csv(longdiff_df,
           file.path(OUTPUT_DIR, "robustness_functional_form_longdiff.csv"))
@@ -557,7 +574,7 @@ save_pres("fig_ms_binned_treatment_kl.png", p20_sys, width = 9, height = 4.5)
 bin_st_plot <- bin_plot |>
   filter(level == "state") |>
   mutate(iv_label = factor(iv_family,
-                            levels = c("MID onset", "Fatal MID onset")))
+                            levels = c("MID onset (t-1)", "Fatal MID onset (t-1)")))
 
 p20_st <- ggplot(bin_st_plot,
                   aes(x = bin_label, y = estimate, group = iv_label)) +
@@ -578,10 +595,9 @@ p20_st <- ggplot(bin_st_plot,
 save_pres("fig_ms_binned_treatment_churn.png", p20_st, width = 9, height = 4.5)
 
 # ============================================================
-# Annual vs 5-year long-difference DV: single figure, three IVs:
-#   log(1+MID count) [system KL], log(1+MID onset) [state churn],
-#   and weighted partner-war exposure [state churn].
-# One row of three panels; y-axis = annual vs 5-year difference.
+# Annual vs 5-year long-difference DV: single figure, two IVs:
+#   log(1+fatal MID count) [system JS] and log(1+fatal MID onset) [state churn].
+# One row of two panels; y-axis = annual vs 5-year difference.
 # ============================================================
 
 # Normalize IV family labels (strip "(t-1)" / "(5-yr sum)" suffixes).
@@ -591,7 +607,8 @@ clean_iv_family <- function(s) {
   s
 }
 
-keep_ivs <- c("log(1 + MID count)", "log(1 + MID onset)", "Partner War Exposure")
+# [2026-10-12] focal IVs are the fatal measures (main-text tables are fatal only)
+keep_ivs <- c("log(1 + Fatal MID count)", "log(1 + Fatal MID onset)")
 
 ld_plot <- longdiff_df |>
   mutate(iv_family = clean_iv_family(iv_label)) |>

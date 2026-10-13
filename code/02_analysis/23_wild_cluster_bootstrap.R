@@ -156,6 +156,38 @@ if (!all(state_controls_needed %in% names(state_churn))) {
 }
 
 state_churn <- state_churn |> mutate(log_churn = log1p(churn))
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
+state_churn <- state_churn |>
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn[c("ccode", "year")]))
 
 state_data <- state_churn |>
   mutate(log_mid_onset_count       = log1p(mid_onset_count),
@@ -171,26 +203,17 @@ cat(sprintf("  State-year obs: %d, states: %d, years: %d-%d\n",
 # State-level IVs (match scripts 02 / 13)
 # ============================================================
 
-# Focal IVs only -- avoid running the wild bootstrap (B = 9999) over the
-# full conflict-measure set. Figure shows just these two.
+# Focal IV only -- avoid running the wild bootstrap (B = 9999) over the
+# full conflict-measure set. [2026-10-12] The partner-war-exposure (H3) IV was removed.
+# [2026-10-12] focal IV follows the fatal t-1 headline (main-text Table 3, column 3).
 state_ivs <- list(
-  list(col = "log_mid_onset_count", label = "log(1 + MID onset)"),
-  # Weighted partner-war exposure as focal IV: keep the conflict IV as a
-  # control but drop partner_war_frac_weighted from the control set (it is
-  # the IV here) to match the main H3 specification.
-  list(col = "partner_war_frac_weighted", label = "Partner War Exposure",
-       ctrl = "log_mid_onset_count + democracy + autocracy + cinc + major_power + is_isolated_t1")
+  list(col = "log_fatal_onset_lag1", label = "log(1 + Fatal MID onset) (t-1)")
 )
 
-# --- Partner-war control routing by IV severity ---
-# Non-fatal IVs (any MID exposure) -> partner_war_frac_weighted
-# Fatal IVs (battle-death-bearing MIDs) -> partner_fatal_war_frac_weighted
-# State-level churn regressions in this script use the tie-WEIGHTED partner-
-# war exposure (alliance-strength-weighted share of partners at war), which is
-# the harmonized robustness-script default. The unweighted variants are
-# reserved for the main 02_state_level_analysis.R headline tables.
-CTRL_MID   <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_FATAL <- "partner_fatal_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+# Same control set as main-text Table 3 column 3 (state + year FE, SEs clustered by state and year).
+CTRL_MID   <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+CTRL_FATAL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 ctrl_for_iv <- function(iv) if (grepl("fatal", iv)) CTRL_FATAL else CTRL_MID
 # state_ctrl_str is now routed per IV via ctrl_for_iv() inside run_one_iv().
 
@@ -208,9 +231,12 @@ run_one_iv <- function(iv) {
   ctrl <- if (!is.null(iv$ctrl)) iv$ctrl else ctrl_for_iv(iv_col)
   cat(sprintf("\n[IV] %s\n", iv_col))
 
-  f <- as.formula(paste0("log_churn ~ ", iv_col, " + ", ctrl,
+  f <- as.formula(paste0("churn ~ ", iv_col, " + ", ctrl,
                           " | ccode + year"))
-  m <- feols(f, data = state_data, cluster = ~ ccode + year)
+  # [2026-10-12] defensive: drop any row where the t-1 IV is undefined (state not in the system in t-1)
+  # up front so boottest() sees exactly the estimation sample.
+  d_iv <- state_data |> filter(!is.na(.data[[iv_col]]))
+  m <- feols(f, data = d_iv, cluster = ~ ccode + year)
   cf <- coef(m)[iv_col]
   vv <- vcov(m, cluster = ~ ccode + year)
   asy_se <- sqrt(diag(vv)[iv_col])
@@ -254,8 +280,8 @@ run_one_iv <- function(iv) {
     ci_low_wcb_2way  = if (!is.null(bt2)) unname(bt2$conf_int[1]) else NA_real_,
     ci_high_wcb_2way = if (!is.null(bt2)) unname(bt2$conf_int[2]) else NA_real_,
     n_obs          = nobs(m),
-    n_clusters_state = n_distinct(state_data$ccode),
-    n_clusters_year  = n_distinct(state_data$year),
+    n_clusters_state = n_distinct(d_iv$ccode),
+    n_clusters_year  = n_distinct(d_iv$year),
     B              = B_REPS
   )
 }
@@ -276,14 +302,16 @@ cat("\n--- Plotting ---\n")
 # Levels and labels supplied inline so the script is robust against
 # a polluted workspace where iv_levels_all may have been redefined
 # as the 8-element sys+state set by another script in the session.
-iv_levels_state <- c("log(1 + MID onset)", "Partner War Exposure")
-iv_facet_labels <- c("log(1 +\nMID onset)", "Partner War\nExposure")
+iv_levels_state <- c("log(1 + Fatal MID onset) (t-1)")
+iv_facet_labels <- c("log(1 + Fatal\nMID onset) (t-1)")
 
 p_dat <- results |>
   filter(iv_label %in% iv_levels_state) |>
-  select(iv_label, p_asy_1way, p_asy_2way, p_wcb_1way, p_wcb_2way) |>
-  pivot_longer(-iv_label, names_to = "method", values_to = "pval") |>
+  select(iv_label, estimate, p_asy_1way, p_asy_2way, p_wcb_1way, p_wcb_2way) |>
+  pivot_longer(-c(iv_label, estimate), names_to = "method", values_to = "pval") |>
   mutate(
+    # [2026-10-12] sign-aware one-sided p-value for H: effect > 0 (was pval/2 under a two-sided label)
+    pval_one = if_else(estimate > 0, pval / 2, 1 - pval / 2),
     cluster_scheme = case_when(
       str_detect(method, "1way") ~ "Cluster: state",
       str_detect(method, "2way") ~ "Cluster: state + year"),
@@ -308,7 +336,7 @@ panel_theme <- theme_pres() +
 # panel; no system-level analogue. Naming kept consistent with the
 # split-by-outcome convention used in scripts 16-23.
 p_pvals <- p_dat |>
-  ggplot(aes(x = iv_label, y = pval/2,
+  ggplot(aes(x = iv_label, y = pval_one,
              color = inference, shape = inference, group = inference)) +
   geom_hline(yintercept = 0.05, color = "black",
              linetype = "dashed", linewidth = 0.8) +
@@ -322,7 +350,7 @@ p_pvals <- p_dat |>
              labeller = label_wrap_gen(width = 22)) +
   labs(
     title = "Wild-cluster bootstrap",
-    x = NULL, y = "p-value (two-sided)",
+    x = NULL, y = "One-sided p-value (H: effect > 0)",
     color = NULL, shape = NULL
   ) +
   panel_theme +

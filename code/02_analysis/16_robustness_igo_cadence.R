@@ -125,6 +125,7 @@ print(annual_turn)
 cat("\n== Main results WITH vs WITHOUT the IGO layer ==\n")
 specs <- readr::read_csv(file.path(OUTPUT_DIR, "robustness_specifications.csv"),
                          show_col_types = FALSE) |>
+  filter(!grepl("^VAR_", model)) |>   # [2026-10-12] Granger F-statistics are not conflict coefficients
   filter(!is.na(coef), !is.na(pval))
 
 loo <- specs |>
@@ -183,11 +184,12 @@ cat("\n== 1966+ annual-IGO alternative specification ==\n")
 ## spec uses are written by 01_system_level_analysis.R to the .csv.
 sys <- readr::read_csv(file.path(OUTPUT_DIR, "system_analysis_data.csv"),
                        show_col_types = FALSE) |>
-  filter(!is.na(log_js_divergence_lag1), !is.na(log_mid_count_lag1))
+  filter(!is.na(js_divergence_lag1), !is.na(log_fatal_mid_count_lag1))
 
-sys_fml <- log_js_divergence ~ log_mid_count_lag1 +
+# [2026-10-12] focal IVs follow the fatal t-1 headline
+sys_fml <- js_divergence ~ log_fatal_mid_count_lag1 +
   log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) +
-  poly(year, 2) + log_js_divergence_lag1
+  poly(year, 2) + js_divergence_lag1
 
 fit_sys <- function(d) feols(sys_fml, data = d,
                              panel.id = ~ unit + year, vcov = NW(lag = NW_LAG))
@@ -196,10 +198,11 @@ sys_full <- fit_sys(sys)
 sys_66   <- fit_sys(filter(sys, year >= 1966))
 
 ## --- State: main TWFE spec, two-way clustered ----------------------------
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
 st <- readr::read_csv(file.path(OUTPUT_DIR, "state_churn_data.csv"),
                       show_col_types = FALSE)
 
-st_fml <- log_churn ~ log_mid_onset_count + partner_war_frac_weighted +
+st_fml <- churn ~ log_fatal_onset_lag1 +
   democracy + autocracy + cinc + major_power + is_isolated_t1 |
   ccode + year
 
@@ -222,15 +225,12 @@ cell <- function(v) {
 }
 
 alt_specs <- list(
-  list(label = "System: MID count$_{t-1}$",
-       full = grab(sys_full, "log_mid_count_lag1"),
-       yr66 = grab(sys_66,   "log_mid_count_lag1")),
-  list(label = "State: MID onset",
-       full = grab(st_full,  "log_mid_onset_count"),
-       yr66 = grab(st_66,    "log_mid_onset_count")),
-  list(label = "State: Partner-war exposure",
-       full = grab(st_full,  "partner_war_frac_weighted"),
-       yr66 = grab(st_66,    "partner_war_frac_weighted"))
+  list(label = "System: fatal MID count$_{t-1}$",
+       full = grab(sys_full, "log_fatal_mid_count_lag1"),
+       yr66 = grab(sys_66,   "log_fatal_mid_count_lag1")),
+  list(label = "State: fatal MID onset$_{t-1}$",
+       full = grab(st_full,  "log_fatal_onset_lag1"),
+       yr66 = grab(st_66,    "log_fatal_onset_lag1"))
 )
 
 cat("\nAlt-spec coefficients (b, se, p, n):\n")

@@ -159,6 +159,38 @@ state_churn <- state_churn |>
          major_power = replace_na(major_power, 0),
          log_churn = log1p(churn),
          log_mid_onset_count = log1p(mid_onset_count))
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
+state_churn <- state_churn |>
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn[c("ccode", "year")]))
 
 n_before <- nrow(state_churn)
 state_panel <- state_churn |>
@@ -171,17 +203,19 @@ cat(sprintf("  state-years: %d; with year-over-year non-mob change: %d; with win
             nrow(state_panel), sum(!is.na(state_panel$d_cinc_nonmob)),
             sum(!is.na(state_panel$win_cinc_nonmob))))
 
-CTRL <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-IV   <- "log_mid_onset_count"
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+CTRL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+# [2026-10-12] focal IV follows the fatal t-1 headline
+IV   <- "log_fatal_onset_lag1"
 
 # ============================================================
 # 3. Baron-Kenny mediation, TWFE, cluster bootstrap over states (as in 05)
 # ============================================================
 bk_state <- function(data, iv, mediator, n_boot = N_BOOT) {
-  f_tot <- as.formula(paste0("log_churn ~ ", iv, " + ", CTRL, " | ccode + year"))
+  f_tot <- as.formula(paste0("churn ~ ", iv, " + ", CTRL, " | ccode + year"))
   f_a   <- as.formula(paste0(mediator, " ~ ", iv, " + ", CTRL, " | ccode + year"))
-  f_bc  <- as.formula(paste0("log_churn ~ ", iv, " + ", mediator, " + ", CTRL, " | ccode + year"))
-  d <- data |> filter(!is.na(.data[[mediator]]))
+  f_bc  <- as.formula(paste0("churn ~ ", iv, " + ", mediator, " + ", CTRL, " | ccode + year"))
+  d <- data |> filter(!is.na(.data[[mediator]]), !is.na(.data[[iv]]))
 
   m_tot <- feols(f_tot, data = d, cluster = ~ ccode + year)
   m_a   <- feols(f_a,   data = d, cluster = ~ ccode + year)
@@ -240,7 +274,7 @@ f3 <- function(x) formatC(1e4 * x, format = "f", digits = 2)   # reported in uni
 fp <- function(x) sprintf("%.1f\\%%", 100 * x)
 tex <- c(
   "\\begin{table}[htbp]", "\\centering", "\\footnotesize",
-  "\\caption{Alternative capability measures for the realized-power mediation. State-level TWFE (state and year fixed effects), $\\log(1+\\text{churn})$ on $\\log(1+\\text{MID onset})$ with the full control set. Indirect effects are $a \\times b$ with 95\\% cluster-bootstrap intervals (1,000 draws, resampling states). The $a$ path, indirect effect, and interval are multiplied by $10^{4}$.}",
+  "\\caption{Alternative capability measures for the realized-power mediation. State-level TWFE (state and year fixed effects), churn (not logged) on $\\log(1+\\text{fatal MID onset})_{t-1}$ with the full control set. Indirect effects are $a \\times b$ with 95\\% cluster-bootstrap intervals (1,000 draws, resampling states). The $a$ path, indirect effect, and interval are multiplied by $10^{4}$.}",
   "\\label{tab:cinc_nonmob}",
   "\\begin{tabular}{p{5.2cm}lrrrrr}", "\\toprule",
   "Mediator & Window & $N$ & $a$ path (SE) & Indirect $ab$ & 95\\% CI & \\% mediated \\\\", "\\midrule",

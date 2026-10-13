@@ -20,3 +20,9 @@ renv/staging/
 .DS_Store
 .idea/
 .venv/
+
+# Stage 5 replication sweep: authors' data (data/raw/* above) and per-study intermediates
+results/replication_sweep/_build/
+
+# replication sweep not released
+code/04_replication_sweep/

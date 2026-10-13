@@ -158,8 +158,9 @@ cat("Loading inputs...\n")
 
 dyad_data   <- readRDS(file.path(OUTPUT_DIR, "dyad_year_network_layers.rds"))
 system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
-  filter(!is.na(js_divergence)) |>
   arrange(year) |>
+  # [2026-10-12] conflict lags are built BEFORE dropping years without JS, so 1817 keeps its 1816 conflict
+  (\(d) { stopifnot(all(diff(d$year) == 1)); d })() |>   # consecutive years
   mutate(
     log_js_divergence    = log1p(js_divergence),
     log_mid_count        = log1p(mid_count),
@@ -170,8 +171,40 @@ system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
     log_fatal_mid_count_lag1 = dplyr::lag(log_fatal_mid_count, 1),
     unit = 1L
   ) |>
-  filter(!is.na(mid_count_lag1))
+  filter(!is.na(mid_count_lag1), !is.na(js_divergence))
 state_churn_base <- readRDS(file.path(OUTPUT_DIR, "state_network_churn.rds"))
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn_base |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn_base), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
+state_churn_base <- state_churn_base |>
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn_base[c("ccode", "year")]))
 
 igo_input <- load_igo_state_year()
 io_pct    <- igo_input[[1]]
@@ -328,64 +361,38 @@ compute_system_kl <- function(panel) {
 }
 
 compute_state_churn <- function(panel) {
-  # Match the original gate in 02_compute_network_measures.R:
-  #   - Only emit churn for state-years where the state had >= 1
-  #     positive-weight tie in BOTH the current and previous year
-  #     (mirrors `state_year_summary |> filter(w > 0)` then the
-  #     consecutive-year `if (yr_t - yr_t1 != 1) next` guard).
-  #   - Without this, states whose only non-zero ties were on one
-  #     side of the year boundary get artificial churn = 1, and the
-  #     count of such cases drifts as the IGO threshold changes ->
-  #     coefficients move even when KL is stable.
-  years_sorted <- sort(unique(panel$year))
-  out <- tibble(ccode = integer(), year = integer(), churn = double())
-
-  # State-years with at least one positive-weight tie (either direction)
-  pos <- panel |> filter(main_weight > 0)
-  st_yr_pos <- bind_rows(
-    pos |> transmute(ccode = ccode1, year),
-    pos |> transmute(ccode = ccode2, year)
-  ) |> distinct(ccode, year)
-
-  prev    <- NULL
-  prev_yr <- NA_integer_
-  for (yr in years_sorted) {
-    d <- panel |> filter(year == yr) |>
-      select(ccode1, ccode2, main_weight)
-    if (nrow(d) == 0) { prev <- NULL; prev_yr <- NA_integer_; next }
-    nbrs <- bind_rows(
-      d |> transmute(ccode = ccode1, nbr = ccode2, w = main_weight),
-      d |> transmute(ccode = ccode2, nbr = ccode1, w = main_weight)
-    )
-    if (!is.null(prev) && !is.na(prev_yr) && yr - prev_yr == 1L) {
-      eligible <- intersect(
-        st_yr_pos$ccode[st_yr_pos$year == yr],
-        st_yr_pos$ccode[st_yr_pos$year == prev_yr]
-      )
-      combined <- full_join(
-        nbrs |> rename(w_t = w),
-        prev |> rename(w_tm1 = w),
-        by = c("ccode", "nbr")
-      ) |>
-        filter(ccode %in% eligible) |>
-        mutate(w_t = replace_na(w_t, 0),
-               w_tm1 = replace_na(w_tm1, 0))
-      churn_yr <- combined |>
-        group_by(ccode) |>
-        summarise(
-          num = sum(pmin(w_t, w_tm1)),
-          den = sum(pmax(w_t, w_tm1)),
-          churn = if (den > 0) 1 - num / den else NA_real_,
-          .groups = "drop"
-        ) |>
-        mutate(year = yr) |>
-        select(ccode, year, churn)
-      out <- bind_rows(out, churn_yr)
-    }
-    prev    <- nbrs
-    prev_yr <- yr
-  }
-  out
+  # [2026-10-12] Canonical four-case rule over the full membership universe, as in
+  # 01_data_cleaning/02_compute_network_measures.R and 07: for every state in the system in both t-1 and t,
+  # both isolated -> 0; exactly one side isolated (first partner gained / last partner lost) -> 1;
+  # otherwise 1 - weighted Jaccard. The old gate kept only states with a positive tie in BOTH years, so
+  # isolation transitions were dropped and the dropped set moved with the IGO threshold.
+  # `panel` has one row per undirected dyad (ccode1 < ccode2) for every system member pair.
+  universe <- bind_rows(panel |> distinct(ccode = ccode1, year),
+                        panel |> distinct(ccode = ccode2, year)) |>
+    distinct()
+  trans <- universe |> semi_join(universe |> mutate(year = year + 1L), by = c("ccode", "year"))
+  ties1 <- panel |> filter(main_weight > 0) |> transmute(i = ccode1, j = ccode2, year, w = main_weight)
+  ties <- bind_rows(ties1, ties1 |> select(i = j, j = i, year, w)) |>
+    group_by(i, j, year) |>
+    summarise(w = max(w), .groups = "drop")
+  pairs <- full_join(ties |> transmute(i, j, year = year + 1L, w1 = w),
+                     ties |> transmute(i, j, year, w2 = w),
+                     by = c("i", "j", "year")) |>
+    mutate(w1 = replace_na(w1, 0), w2 = replace_na(w2, 0))
+  agg <- pairs |>
+    group_by(ccode = i, year) |>
+    summarise(n1 = sum(w1 > 0), n2 = sum(w2 > 0),
+              num = sum(pmin(w1, w2)), den = sum(pmax(w1, w2)), .groups = "drop")
+  trans |>
+    left_join(agg, by = c("ccode", "year")) |>
+    mutate(n1 = replace_na(n1, 0L), n2 = replace_na(n2, 0L),
+           num = replace_na(num, 0), den = replace_na(den, 0),
+           churn = case_when(n1 == 0 & n2 == 0 ~ 0,
+                             n1 == 0 | n2 == 0 ~ 1,
+                             den > 0 ~ 1 - num / den,
+                             TRUE ~ NA_real_)) |>
+    arrange(ccode, year) |>
+    select(ccode, year, churn)
 }
 
 # ============================================================
@@ -406,11 +413,12 @@ sys_ivs <- list(
   list(col = "fatal_mid_count_lag1",     label = "Fatal MID count (t-1)"),
   list(col = "log_fatal_mid_count_lag1", label = "log(1 + Fatal MID count) (t-1)")
 )
+# [2026-10-12] state onset IVs at t-1 (headline timing)
 state_ivs <- list(
-  list(col = "mid_onset_count",           label = "MID onset"),
-  list(col = "log_mid_onset_count",       label = "log(1 + MID onset)"),
-  list(col = "fatal_mid_onset_count",     label = "Fatal MID onset"),
-  list(col = "log_fatal_mid_onset_count", label = "log(1 + Fatal MID onset)")
+  list(col = "onset_lag1",           label = "MID onset (t-1)"),
+  list(col = "log_onset_lag1",       label = "log(1 + MID onset) (t-1)"),
+  list(col = "fatal_onset_lag1",     label = "Fatal MID onset (t-1)"),
+  list(col = "log_fatal_onset_lag1", label = "log(1 + Fatal MID onset) (t-1)")
 )
 
 # Re-use state_churn controls if already present; otherwise build them
@@ -495,15 +503,13 @@ if (!all(state_controls_needed %in% names(state_churn_base))) {
            major_power = replace_na(major_power, 0))
 }
 
-# --- Partner-war control routing by IV severity ---
-# Non-fatal IVs (any MID exposure) -> partner_war_frac_weighted
-# Fatal IVs (battle-death-bearing MIDs) -> partner_fatal_war_frac_weighted
-# State-level churn regressions in this script use the tie-WEIGHTED partner-
-# war exposure (alliance-strength-weighted share of partners at war), which is
-# the harmonized robustness-script default. The unweighted variants are
-# reserved for the main 02_state_level_analysis.R headline tables.
-CTRL_MID   <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_FATAL <- "partner_fatal_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# --- State-level control set ---
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+# CTRL_MID and CTRL_FATAL are now identical (democracy + autocracy + cinc +
+# major_power + is_isolated_t1); both names and ctrl_for_iv() are kept so the
+# call sites are unchanged.
+CTRL_MID   <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+CTRL_FATAL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 ctrl_for_iv <- function(iv) if (grepl("fatal", iv)) CTRL_FATAL else CTRL_MID
 
 sys_ctrl_str   <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) + poly(year, 2)"
@@ -543,7 +549,7 @@ run_spec <- function(L, U) {
   # Fit each IV separately at each level
   sys_rows <- purrr::map_dfr(sys_ivs, function(iv) {
     iv_col <- iv$col; iv_lab <- iv$label
-    f <- as.formula(paste0("log_js_divergence ~ ", iv_col, " + ",
+    f <- as.formula(paste0("js_divergence ~ ", iv_col, " + ",
                             sys_ctrl_str))
     m <- tryCatch(lm(f, data = sys_df), error = function(e) NULL)
     if (is.null(m)) return(NULL)
@@ -556,7 +562,7 @@ run_spec <- function(L, U) {
 
   st_rows <- purrr::map_dfr(state_ivs, function(iv) {
     iv_col <- iv$col; iv_lab <- iv$label
-    f <- as.formula(paste0("log_churn_recomp ~ ", iv_col, " + ",
+    f <- as.formula(paste0("churn_recomp ~ ", iv_col, " + ",
                             ctrl_for_iv(iv_col), " | ccode + year"))
     m <- tryCatch(feols(f, data = st_df, cluster = ~ ccode + year),
                    error = function(e) NULL)

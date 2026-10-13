@@ -174,14 +174,12 @@ load_mid_hostlev <- function() {
     if (!is.null(sy_mids)) {
       hl_pat <- grepl("(?i)host[._-]?lev", names(sy_mids), perl = TRUE)
       hl_cols <- names(sy_mids)[hl_pat]
+      # [2026-10-12] The IV is the hostility of the state's MID ONSETS, so only an onset-level hostility column
+      # is acceptable here. Ongoing-max hostility would give a continuing war without a new onset a positive
+      # value. If no onset column exists, fall through to the MIDB CSV fallback below.
+      hl_cols <- intersect(c("cowmidonsethihostlev", "midonsethihostlev"), hl_cols)
       if (length(hl_cols) > 0) {
-        # Prefer ongoing-max > onset-max > anything else.
-        hl_priority <- c("cowmidongoinghihostlev",
-                         "cowmidonsethihostlev",
-                         "midongoinghihostlev",
-                         "midonsethihostlev")
-        hl_col <- intersect(hl_priority, hl_cols)
-        hl_col <- if (length(hl_col) > 0) hl_col[1] else hl_cols[1]
+        hl_col <- hl_cols[1]
         cat(sprintf("  Using state-year col: %s\n", hl_col))
         # In state-year aggregation, fatality is approximated by HostLev>=4
         # and dispute-id is unavailable; we treat each state-year row as
@@ -327,19 +325,14 @@ if (needs_prep) {
            major_power = replace_na(major_power, 0))
 }
 
-# --- Partner-war control routing by IV severity ---
-# Non-fatal IVs (any MID exposure) -> partner_war_frac_weighted
-# Fatal IVs (battle-death-bearing MIDs) -> partner_fatal_war_frac_weighted
-# State-level churn regressions in this script use the tie-WEIGHTED partner-
-# war exposure (alliance-strength-weighted share of partners at war), which is
-# the harmonized robustness-script default. The unweighted variants are
-# reserved for the main 02_state_level_analysis.R headline tables.
+# --- State-level control set ---
+# Non-fatal and fatal IVs share the same state-level controls:
+# democracy + autocracy + cinc + major_power + is_isolated_t1.
 # HostLev IVs (mean_hostlev_onset / log_mean_hostlev_onset) are not
-# named "fatal", so they route to CTRL_MID (any-MID baseline). This is
-# correct: HostLev is a separate severity scale, not a fatal/non-fatal
-# binary; the partner-war control should reflect any-MID exposure.
-CTRL_MID   <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_FATAL <- "partner_fatal_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# named "fatal", so they route to CTRL_MID (any-MID baseline).
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+CTRL_MID   <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+CTRL_FATAL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 ctrl_for_iv <- function(iv) if (grepl("fatal", iv)) CTRL_FATAL else CTRL_MID
 
 mid_hl <- load_mid_hostlev()
@@ -404,6 +397,20 @@ state_churn <- state_churn |>
          log_mean_hostlev_onset = log1p(mean_hostlev_onset),
          log_churn              = log1p(churn))
 
+# [2026-10-12] Hostility of the state's MID onsets in t-1 (headline timing), from the full COW state-year
+# universe (as in 02): 0 if the state was in the system in t-1 without an onset, NA if it was not in the system.
+hl_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                            dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(state_hl |> dplyr::select(ccode, year, mean_hostlev_onset), by = c("ccode", "year")) |>
+  dplyr::mutate(mean_hostlev_onset = as.numeric(tidyr::replace_na(mean_hostlev_onset, 0)))
+state_churn <- state_churn |>
+  dplyr::left_join(hl_univ |> dplyr::transmute(ccode, year = year + 1L,
+                                                mean_hostlev_onset_lag1 = mean_hostlev_onset,
+                                                log_mean_hostlev_onset_lag1 = log1p(mean_hostlev_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn[c("ccode", "year")]))
+
 # ------------------------------------------------------------
 # Helpers (reused pattern)
 # ------------------------------------------------------------
@@ -437,10 +444,10 @@ extract_row <- function(m, terms, label, level) {
 # scaling at the state level.
 
 state_ivs <- list(
-  list(col = "mean_hostlev_onset",
-       label = "Mean HostLev (onsets)"),
-  list(col = "log_mean_hostlev_onset",
-       label = "log(1 + Mean HostLev) (onsets)")
+  list(col = "mean_hostlev_onset_lag1",
+       label = "Mean HostLev (onsets, t-1)"),
+  list(col = "log_mean_hostlev_onset_lag1",
+       label = "log(1 + Mean HostLev) (onsets, t-1)")
 )
 
 # ctrl_state is now routed per IV via ctrl_for_iv() inside the iteration.
@@ -448,7 +455,7 @@ state_ivs <- list(
 cat("\n=== State level ===\n")
 state_rows <- purrr::map_dfr(state_ivs, function(iv) {
   iv_col <- iv$col; iv_lab <- iv$label
-  f <- as.formula(paste0("log_churn ~ ", iv_col, " + ", ctrl_for_iv(iv_col),
+  f <- as.formula(paste0("churn ~ ", iv_col, " + ", ctrl_for_iv(iv_col),
                           " | ccode + year"))
   m <- feols(f, data = state_churn, cluster = ~ ccode + year)
   cf <- coef(m); vv <- vcov(m)
@@ -476,10 +483,10 @@ cat("\n--- Plotting ---\n")
 
 plot_df <- results |>
   mutate(iv_label = factor(iv_label,
-                            levels = c("Mean HostLev (onsets)",
-                                        "log(1 + Mean HostLev) (onsets)"),
-                           labels = c("Mean Hostility\nLevel (onsets)",
-                                      "log(1 + Mean\nHostility\nLevel) (onsets)")))
+                            levels = c("Mean HostLev (onsets, t-1)",
+                                        "log(1 + Mean HostLev) (onsets, t-1)"),
+                           labels = c("Mean Hostility\nLevel (onsets, t-1)",
+                                      "log(1 + Mean\nHostility\nLevel) (onsets, t-1)")))
 
 p_hl <- ggplot(plot_df,
                aes(x = estimate, y = forcats::fct_rev(iv_label))) +
@@ -513,9 +520,10 @@ if (file.exists(ws_path)) {
     transmute(iv_label, estimate, se, ci_low, ci_high,
               group = "Hostility level")
 
-  lev_order <- c("MID onset", "log(1 + MID onset)",
-                 "Fatal MID onset", "log(1 + Fatal MID onset)",
-                 "Mean HostLev (onsets)", "log(1 + Mean HostLev) (onsets)")
+  # labels written by 11_robustness_war_samples.R (state IVs at t-1)
+  lev_order <- c("MID onset (t-1)", "log(1 + MID onset) (t-1)",
+                 "Fatal MID onset (t-1)", "log(1 + Fatal MID onset) (t-1)",
+                 "Mean HostLev (onsets, t-1)", "log(1 + Mean HostLev) (onsets, t-1)")
 
   combined <- bind_rows(ws_state_full, hl_state) |>
     mutate(iv_label = factor(iv_label, levels = lev_order),

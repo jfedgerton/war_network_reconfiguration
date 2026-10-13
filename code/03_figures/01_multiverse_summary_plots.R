@@ -67,8 +67,10 @@ bin_pval <- function(p) {
 panels <- list()
 
 # Script 24: excl-belligerent
+# [2026-10-12] Script 18 (excluded-belligerent multiverse, built on partner war exposure) is archived; a stale
+# CSV on disk must not be plotted. The peace-dyad panels of Tables 1 and 3 replace it.
 f24 <- file.path(OUTPUT_DIR, "robustness_excl_belligerent_multiverse.csv")
-if (file.exists(f24)) {
+if (FALSE && file.exists(f24)) {
   d24 <- read_csv(f24, show_col_types = FALSE) |>
     mutate(panel = "Excl. belligerent dyads",
            group = outcome,
@@ -84,9 +86,10 @@ if (file.exists(f25)) {
     mutate(panel = "Strength control",
            group = spec,
            pval_bin = bin_pval(pval))
-  # If 25 has both MID onset and fatal MID, keep only MID onset for cleaner plot
+  # [2026-10-12] keep the headline IV only: fatal MID onset at t-1
   if ("iv" %in% names(d25)) {
-    d25 <- d25 |> filter(iv == "log_mid_onset_count")
+    d25 <- d25 |> filter(iv == "log_fatal_onset_lag1")
+    stopifnot(nrow(d25) > 0)
   }
   panels[["strength"]] <- d25
   cat(sprintf("Loaded script 25 multiverse: %d rows\n", nrow(d25)))
@@ -128,7 +131,7 @@ if ("strength" %in% names(panels)) {
     geom_boxplot(width = 0.6, outlier.size = 1.2, outlier.alpha = 0.5) +
     scale_fill_manual(values = c("Without strength" = ACCENT,
                                   "With strength" = ACCENT2)) +
-    labs(x = NULL, y = "Coefficient on log(1+MID Onset)",
+    labs(x = NULL, y = "Coefficient on log(1+Fatal MID Onset), t-1",
          title = "B. Strength control",
          subtitle = sprintf("120 layer/weighting combos. Without median: %.4f | With median: %.4f",
                             median(panels$strength$estimate[panels$strength$group == "Without strength"], na.rm = TRUE),
@@ -183,7 +186,7 @@ if ("excl_bell" %in% names(panels)) {
     scale_y_continuous(labels = function(x) paste0(x, "%")) +
     labs(x = NULL, y = "% of specifications",
          title = "A. Excl. belligerent dyads",
-         subtitle = "Significance of positive MID-onset coefficients across 120 combos") +
+         subtitle = "Significance of positive fatal MID-onset (t-1) coefficients across 120 combos") +
     theme_pres(base_size = 13) +
     theme(legend.position = "bottom")
   plot_list_pval[["excl_bell"]] <- p24_pval
@@ -208,7 +211,7 @@ if ("strength" %in% names(panels)) {
     scale_y_continuous(labels = function(x) paste0(x, "%")) +
     labs(x = NULL, y = "% of specifications",
          title = "B. Strength control",
-         subtitle = "Significance of positive MID-onset coefficients across 120 combos") +
+         subtitle = "Significance of positive fatal MID-onset (t-1) coefficients across 120 combos") +
     theme_pres(base_size = 13) +
     theme(legend.position = "bottom")
   plot_list_pval[["strength"]] <- p25_pval

@@ -732,15 +732,24 @@ state_war <- dyad_data |>
   summarise(
     war_participation = 1,
     fatal_mid_participation = as.numeric(any(cowmidfatal == 1, na.rm = TRUE)),
-    mid_count = n_distinct(paste(ccode, year)),  # count of MID dyads per state-year
     .groups = "drop"
   )
 
 # State-level MID counts: number of MID involvements per state-year
 # mid_count: all ongoing; fatal_mid_count: fatal only; mid_onset_count: new MIDs;
 # fatal_mid_onset_count: new MIDs that are also fatal
+# MID columns must be identical on (i,j) and (j,i), so counting only ccode1 < ccode2 loses nothing (fix 2026-10-11:
+# the panel is directed, and summing over all rows double-counted every MID dyad)
+mid_chk <- dyad_data |> select(ccode1, ccode2, year, cowmidongoing, cowmidonset, cowmidfatal)
+mid_rev <- mid_chk |> rename(ccode1 = ccode2, ccode2 = ccode1)
+mid_sym <- inner_join(mid_chk, mid_rev, by = c("ccode1", "ccode2", "year"), suffix = c("", ".r"))
+stopifnot(nrow(mid_chk) > 0, sum(mid_chk$cowmidonset == 1) > 0, !anyDuplicated(mid_chk[c("ccode1", "ccode2", "year")]),
+          nrow(mid_sym) == nrow(mid_chk), sum(mid_chk$ccode1 < mid_chk$ccode2) * 2 == nrow(mid_chk),
+          all(mid_sym$cowmidongoing == mid_sym$cowmidongoing.r), all(mid_sym$cowmidonset == mid_sym$cowmidonset.r),
+          all(mid_sym$cowmidfatal == mid_sym$cowmidfatal.r))
+rm(mid_chk, mid_rev, mid_sym)
 state_mid_count <- dyad_data |>
-  filter(cowmidongoing == 1) |>
+  filter(cowmidongoing == 1, ccode1 < ccode2) |>   # one row per undirected dyad (fix 2026-10-11)
   select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
   pivot_longer(cols = c(ccode1, ccode2), values_to = "ccode") |>
   group_by(ccode, year) |>
@@ -751,6 +760,16 @@ state_mid_count <- dyad_data |>
     fatal_mid_onset_count = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
     .groups = "drop"
   )
+# check against the old directed count: every state-year count must be exactly half of it
+old_dir <- dyad_data |> filter(cowmidongoing == 1) |> select(ccode1, ccode2, year, cowmidonset) |>
+  pivot_longer(cols = c(ccode1, ccode2), values_to = "ccode") |> group_by(ccode, year) |>
+  summarise(n_old = n(), on_old = sum(cowmidonset == 1, na.rm = TRUE), .groups = "drop") |>
+  full_join(state_mid_count, by = c("ccode", "year"))
+stopifnot(nrow(state_mid_count) > 0, sum(state_mid_count$mid_onset_count) > 0,
+          !anyNA(old_dir$n_old), !anyNA(old_dir$mid_count),   # identical state-year key sets, old vs new
+          nrow(old_dir) == nrow(state_mid_count), all(old_dir$n_old == 2 * old_dir$mid_count),
+          all(old_dir$on_old == 2 * old_dir$mid_onset_count))
+rm(old_dir)
 
 state_churn <- state_churn |>
   left_join(state_war |> select(ccode, year, war_participation, fatal_mid_participation),

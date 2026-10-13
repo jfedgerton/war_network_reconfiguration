@@ -6,14 +6,14 @@
 #
 # SYSTEM LEVEL
 #   DV: js_divergence
-#   IVs: fatal_mid_count, nonfatal_mid_count
+#   IVs: mid_count, fatal_mid_count at t-1 (raw and log) [2026-10-12]
 #   Controls: log1p(n_democracies), log1p(n_autocracies)
 #   SEs: Newey-West HAC (lag = 5)
 #
 # STATE LEVEL
 #   DV: churn
-#   IVs: fatal_mid_onset_count, nonfatal_mid_onset_count
-#   Controls: partner_war_frac, democracy, autocracy, cinc, major_power
+#   IVs: mid_onset_count, fatal_mid_onset_count at t-1 (raw and log) [2026-10-12]
+#   Controls: democracy, autocracy, cinc, major_power, is_isolated_t1
 #   FE: ccode + year  (TWFE)
 #   SEs: two-way clustered (~ ccode + year)
 #
@@ -89,8 +89,9 @@ cat("Loading data...\n")
 # KL_t = alpha + beta*IV_{t-1} + log1p(n_democracies) + log1p(n_autocracies),
 # plain OLS (no HAC), lagged IVs, no post_1945 indicator.
 system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
-  filter(!is.na(js_divergence)) |>
   arrange(year) |>
+  # [2026-10-12] conflict lags are built BEFORE dropping years without JS, so 1817 keeps its 1816 conflict
+  (\(d) { stopifnot(all(diff(d$year) == 1)); d })() |>   # consecutive years
   mutate(
     log_js_divergence    = log1p(js_divergence),
     log_mid_count        = log1p(mid_count),
@@ -100,7 +101,7 @@ system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
     fatal_mid_count_lag1     = dplyr::lag(fatal_mid_count,     1),
     log_fatal_mid_count_lag1 = dplyr::lag(log_fatal_mid_count, 1)
   ) |>
-  filter(!is.na(mid_count_lag1))
+  filter(!is.na(mid_count_lag1), !is.na(js_divergence))
 
 sys_years <- sort(unique(system_data$year))
 cat(sprintf("  System: %d years (%d-%d)\n",
@@ -189,21 +190,50 @@ if (needs_prep) {
            major_power = replace_na(major_power, 0))
 }
 
-# --- Partner-war control routing by IV severity ---
-# Non-fatal IVs (any MID exposure) -> partner_war_frac_weighted
-# Fatal IVs (battle-death-bearing MIDs) -> partner_fatal_war_frac_weighted
-# State-level churn regressions in this script use the tie-WEIGHTED partner-
-# war exposure (alliance-strength-weighted share of partners at war), which is
-# the harmonized robustness-script default. The unweighted variants are
-# reserved for the main 02_state_level_analysis.R headline tables.
-CTRL_MID   <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_FATAL <- "partner_fatal_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# --- State-level control set ---
+# Non-fatal and fatal IVs share the same state-level controls:
+# democracy + autocracy + cinc + major_power + is_isolated_t1.
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+CTRL_MID   <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+CTRL_FATAL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 ctrl_for_iv <- function(iv) if (grepl("fatal", iv)) CTRL_FATAL else CTRL_MID
 
 state_churn <- state_churn |>
   mutate(log_churn                 = log1p(churn),
          log_mid_onset_count       = log1p(mid_onset_count),
          log_fatal_mid_onset_count = log1p(fatal_mid_onset_count))
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
+state_churn <- state_churn |>
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn[c("ccode", "year")]))
 
 st_years <- sort(unique(state_churn$year))
 cat(sprintf("  State: %d years, %d state-year obs\n",
@@ -221,11 +251,12 @@ sys_ivs <- list(
   list(col = "log_fatal_mid_count_lag1", label = "log Fatal MIDs")
 )
 
+# [2026-10-12] state onset IVs at t-1 (headline timing); labels shared with the system IVs.
 state_ivs <- list(
-  list(col = "mid_onset_count",           label = "All MIDs"),
-  list(col = "log_mid_onset_count",       label = "log All MIDs"),
-  list(col = "fatal_mid_onset_count",     label = "Fatal MIDs"),
-  list(col = "log_fatal_mid_onset_count", label = "log Fatal MIDs")
+  list(col = "onset_lag1",           label = "All MIDs"),
+  list(col = "log_onset_lag1",       label = "log All MIDs"),
+  list(col = "fatal_onset_lag1",     label = "Fatal MIDs"),
+  list(col = "log_fatal_onset_lag1", label = "log Fatal MIDs")
 )
 
 sys_controls_str <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) + poly(year, 2)"
@@ -235,7 +266,7 @@ sys_controls_str <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_state
 # System level uses plain OLS (lm) to match main-text; state uses feols TWFE.
 fit_sys <- function(d) {
   purrr::map_dfr(sys_ivs, function(iv) {
-    f <- as.formula(paste0("log_js_divergence ~ ", iv$col, " + ", sys_controls_str))
+    f <- as.formula(paste0("js_divergence ~ ", iv$col, " + ", sys_controls_str))
     m <- tryCatch(lm(f, data = d), error = function(e) NULL)
     if (is.null(m)) return(NULL)
     cf <- coef(m); vv <- vcov(m)
@@ -249,7 +280,7 @@ fit_sys <- function(d) {
 
 fit_state <- function(d) {
   purrr::map_dfr(state_ivs, function(iv) {
-    f <- as.formula(paste0("log_churn ~ ", iv$col, " + ", ctrl_for_iv(iv$col),
+    f <- as.formula(paste0("churn ~ ", iv$col, " + ", ctrl_for_iv(iv$col),
                             " | ccode + year"))
     m <- tryCatch(feols(f, data = d, cluster = ~ ccode + year),
                    error = function(e) NULL)
@@ -413,11 +444,11 @@ baseline_plot <- baseline |>
 
 cat("\n--- Plotting ---\n")
 
-# Restrict the random-drop figures to the log(1+MID) outcome only.
+# Restrict the random-drop figures to the log(1 + fatal MID) IV only (fatal t-1 headline).
 # Category = positive AND two-sided significant at 0.05 (blue) vs null (red),
 # with a clean numeric x-axis label for the number of years dropped.
 random_df <- random_df |>
-  filter(iv_label == "log All MIDs") |>
+  filter(iv_label == "log Fatal MIDs") |>
   mutate(
     drop_n  = factor(drop_size, levels = drop_sizes),
     sig_pos = (abs(estimate / se) > qnorm(0.975)) & (estimate > 0),
@@ -445,8 +476,8 @@ make_drop_panel <- function(lvl_label, file_out) {
   share_df <- d_lvl |>
     count(iv_label, drop_n, sig_cat, .drop = FALSE) |>
     mutate(iv_label = as.character(iv_label)) |>
-    filter(iv_label == "log All MIDs") |> 
-    #mutate(iv_label = ifelse(iv_label == "log All MIDs", "Log count of MIDs"))
+    filter(iv_label == "log Fatal MIDs") |> 
+    #mutate(iv_label = ifelse(iv_label == "log Fatal MIDs", "Log count of MIDs"))
     group_by(iv_label, drop_n) |>
     mutate(share = n / sum(n)) |>
     ungroup()
@@ -487,7 +518,7 @@ make_drop_panel("State (churn)", "fig_ms_random_year_drops_state.png")
 # Baseline (full-sample) estimate as dashed reference line per panel.
 
 p13system <- ggplot(subset(sliding_df, level_label == "System (JS)" &
-                             iv_label == "log All MIDs"),
+                             iv_label == "log Fatal MIDs"),
               aes(x = mid_year, y = estimate,
                   color = window_label, fill = window_label)) +
   geom_hline(yintercept = 0, color = "gray55", linewidth = 0.3) +
@@ -516,7 +547,7 @@ save_pres("fig_ms_sliding_window_system.png", p13system,
           width = 8, height = 5)
 
 p13sstate <- ggplot(subset(sliding_df, level_label != "System (JS)" &
-                             iv_label == "log All MIDs"),
+                             iv_label == "log Fatal MIDs"),
                     aes(x = mid_year, y = estimate,
                         color = window_label, fill = window_label)) +
   geom_hline(yintercept = 0, color = "gray55", linewidth = 0.3) +

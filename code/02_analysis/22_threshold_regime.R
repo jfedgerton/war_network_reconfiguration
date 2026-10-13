@@ -9,7 +9,7 @@
 # depending on the intensity of conflict (high vs. low war regimes)
 # or the current state of the network (stable vs. transitional).
 #
-# TRANSFORMATION: mid_count and js_divergence are log1p-transformed before
+# TRANSFORMATION: mid_count is log1p-transformed (js_divergence is NOT, as of 2026-10-02) before
 # entering the TVAR / STVAR / Markov-switching models. Both series are
 # non-negative and right-skewed; the log handles the skewness, makes
 # residuals closer to normal, and lets regime-conditional coefficients
@@ -35,10 +35,10 @@ system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
   arrange(year)
 
 # Apply log1p to non-negative skewed series. After this point every
-# reference to mid_count, fatal_mid_count, and js_divergence in the
+# reference to mid_count and fatal_mid_count in the
 # script refers to the LOGGED quantity. Plot labels and tex captions
 # are updated accordingly.
-.LOG_VARS <- c("mid_count", "fatal_mid_count", "js_divergence")
+.LOG_VARS <- c("mid_count", "fatal_mid_count")   # js_divergence stays raw [2026-10-02], matching the main text
 .log_targets <- intersect(.LOG_VARS, names(system_data))
 system_data <- system_data |>
   mutate(across(all_of(.log_targets), ~ log1p(.x)))
@@ -193,7 +193,7 @@ if (!is.null(ms_headline)) {
     geom_vline(xintercept = c(1914, 1939, 1950, 1991),
                linetype = "dashed", alpha = 0.4) +
     labs(x = "Year",
-         y = "Regime 2 Probability (shaded) / Normalized log(1+JS) (line)",
+         y = "Regime 2 Probability (shaded) / Normalized JS divergence (line)",
          title = "Markov-switching regimes") +
     theme_minimal(base_size = 12) +
     theme(plot.title = element_text(face = "bold"),
@@ -425,7 +425,7 @@ qr_ctrl_lbl <- c(none = "no ctrls", full = "full ctrls")
 
 tex_qr <- c(
   "\\begin{table}[htbp]", "\\centering",
-  "\\caption{Quantile Regression: Conflict Effect on $\\log(1+\\text{JS Divergence})$ by Quantile.}",
+  "\\caption{Quantile Regression: Conflict Effect on JS divergence by Quantile.}",
   "\\label{tab:quantile_reg}",
   "\\small",
   "\\begin{tabular}{llrrrr}", "\\toprule",
@@ -442,7 +442,7 @@ for (i in seq_len(nrow(qr_summary))) {
 }
 tex_qr <- c(tex_qr, "\\bottomrule", "\\end{tabular}",
   "\\begin{tablenotes}\\small",
-  "\\item DV: $\\log(1+\\text{JS Divergence})$. Lagged DV and lagged IV always included. ",
+  "\\item DV: JS divergence. Lagged DV and lagged IV always included. ",
   "Full controls add $\\log(1+\\text{n\\_dem})$, $\\log(1+\\text{n\\_aut})$, $\\log(1+\\text{n\\_states})$. ",
   "SEs bootstrapped.",
   "\\end{tablenotes}",
@@ -478,7 +478,7 @@ write_ms_table <- function(spec_key, file_path, caption, label,
     "(Intercept)"        = "Intercept",
     mid_count            = "$\\log(1{+}\\text{MID Count})$",
     fatal_mid_count      = "$\\log(1{+}\\text{Fatal MID Count})$",
-    kl_lag1              = "$\\log(1{+}\\text{JS})$ ($t{-}1$)",
+    kl_lag1              = "JS divergence ($t{-}1$)",
     mid_lag1             = "$\\log(1{+}\\text{MID})$ ($t{-}1$)",
     fatal_lag1           = "$\\log(1{+}\\text{Fatal MID})$ ($t{-}1$)",
     log_n_dem            = "$\\log(1{+}\\text{Democracies})$",
@@ -516,7 +516,7 @@ write_ms_table <- function(spec_key, file_path, caption, label,
   }
   tex <- c(tex, "\\bottomrule", "\\end{tabular}",
     "\\begin{tablenotes}\\small",
-    sprintf("\\item Two-regime Markov-switching model on $\\log(1+\\text{JS})$. Spec: %s.",
+    sprintf("\\item Two-regime Markov-switching model on JS divergence (not logged). Spec: %s.",
             spec_key),
     "\\end{tablenotes}",
     "\\end{table}")
@@ -527,19 +527,19 @@ write_ms_table <- function(spec_key, file_path, caption, label,
 # Headline (MID, no ctrl) to main; the rest to appendix.
 write_ms_table("ms__mid__none",
                 file.path(TABLE_DIR, "table_markov_switching_mid_none.tex"),
-                "Markov-Switching: log(1+JS) on log(1+MID), no controls.",
+                "Markov-Switching: JS divergence on log(1+MID), no controls.",
                 "tab:ms_mid_none")
 write_ms_table("ms__mid__full",
                 file.path(APPX_DIR,  "tableA_markov_switching_mid_full.tex"),
-                "Appendix. Markov-Switching: log(1+JS) on log(1+MID), full controls.",
+                "Appendix. Markov-Switching: JS divergence on log(1+MID), full controls.",
                 "tab:ms_mid_full")
 write_ms_table("ms__fatal__none",
                 file.path(APPX_DIR,  "tableA_markov_switching_fatal_none.tex"),
-                "Appendix. Markov-Switching: log(1+JS) on log(1+Fatal MID), no controls.",
+                "Appendix. Markov-Switching: JS divergence on log(1+Fatal MID), no controls.",
                 "tab:ms_fatal_none")
 write_ms_table("ms__fatal__full",
                 file.path(APPX_DIR,  "tableA_markov_switching_fatal_full.tex"),
-                "Appendix. Markov-Switching: log(1+JS) on log(1+Fatal MID), full controls.",
+                "Appendix. Markov-Switching: JS divergence on log(1+Fatal MID), full controls.",
                 "tab:ms_fatal_full")
 
 cat("\nDone. Nonlinear model analysis complete.\n")

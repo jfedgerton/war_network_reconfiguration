@@ -51,6 +51,21 @@ if (!file.exists(in_csv)) {
 
 med <- read_csv(in_csv, show_col_types = FALSE)
 cat(sprintf("Loaded %d mediation rows.\n", nrow(med)))
+need <- c("level", "mediator_label", "mediator_type", "iv_label", "c_total", "c_total_p", "c_prime", "c_prime_p",
+          "indirect_ab", "indirect_ci_low", "indirect_ci_high", "pct_mediated")
+if (!all(need %in% names(med))) stop("robustness_altmech_mediation.csv lacks: ", paste(setdiff(need, names(med)), collapse = ", "),
+                                     ". Re-run 02_analysis/05_robustness_alt_mechanisms.R.")
+# LaTeX labels keyed by the mediator's column name (ASCII), because the CSV's own labels contain unicode that
+# pdflatex cannot typeset. A mediator that is not listed here stops the script.
+TEX_MED <- c(abs_d_polity2 = "$|\\Delta$ Polity$|$", mp_flip = "Major-power flip", tc_event = "Territorial change",
+             delta_cinc = "$\\Delta$ CINC", abs_d_n_states = "$|\\Delta$ States in system$|$",
+             n_tc_events = "Territorial-change events")
+# [2026-10-12] 05 now uses the fatal t-1 IVs (main-text headline); the older keys are kept for old CSVs.
+TEX_IV  <- c(log_mid_onset_count = "$\\log(1+\\text{MID onset})_{t}$", log_mid_count_lag1 = "$\\log(1+\\text{MID count})_{t-1}$",
+             log_fatal_onset_lag1 = "$\\log(1+\\text{fatal MID onset})_{t-1}$",
+             log_fatal_mid_count_lag1 = "$\\log(1+\\text{fatal MID count})_{t-1}$")
+stopifnot(all(med$mediator %in% names(TEX_MED)), all(med$iv %in% names(TEX_IV)))
+med <- med |> mutate(mediator_label = unname(TEX_MED[mediator]), iv_label = unname(TEX_IV[iv]))
 
 # --------------------------------------------------------------------------- #
 # Formatting helpers
@@ -69,7 +84,7 @@ med <- med |>
     covers_zero = indirect_ci_low <= 0 & indirect_ci_high >= 0,
     pct_med_disp = 100 * pct_mediated,          # stored as a proportion
     ci_disp = sprintf("[%s, %s]", num(indirect_ci_low, 5), num(indirect_ci_high, 5)),
-    verdict = ifelse(covers_zero, "CI covers 0", "CI excludes 0")
+    verdict = ifelse(is.na(covers_zero), "not estimated", ifelse(covers_zero, "CI covers 0", "CI excludes 0"))
   )
 
 fmt_panel <- function(dat) {
@@ -113,8 +128,10 @@ lines <- c(
   "\\caption{Mediation analyses. Each row decomposes the association between",
   "conflict and network reconfiguration into a direct component ($c'$) and an",
   "indirect component ($a\\times b$) running through the listed mediator.",
-  "Confidence intervals are 1,000-replication cluster bootstraps. A rival",
-  "mechanism is ruled out when its indirect effect's interval covers zero.}",
+  "Confidence intervals are 1,000-replication bootstraps that resample states",
+  "in the state-level panel and years in the system-level panel. An interval",
+  "that covers zero gives no evidence that the rival mechanism mediates the",
+  "association.}",
   "\\label{tab:mediation_altmech}",
   paste0("\\begin{tabular}{ll", strrep("r", 4), "l l}"),
   "\\toprule",
@@ -138,12 +155,13 @@ lines <- c(lines,
   "\\end{tabular}",
   paste0("\\begin{minipage}{\\textwidth}\\vspace{2pt}\\scriptsize ",
          "$^{\\dagger}p<0.10$; $^{*}p<0.05$; $^{**}p<0.01$; $^{***}p<0.001$. ",
-         "Indirect effects and their intervals come from a cluster bootstrap ",
-         "(resampling states, fresh cluster ids). Percent mediated is ",
+         "Intervals for the indirect effects come from a cluster bootstrap at the state level ",
+         "(resampling states, fresh cluster ids) and from resampling years at the system level. Percent mediated is ",
          "$a\\times b / c$ and is not meaningful when $c$ is near zero. ",
-         "Consistent channels are reported separately because they are part of ",
+         "Stars on $c$ and $c'$ use two-way clustered standard errors at the state level and OLS standard errors at the system level. ",
+         if (any(!is_rival)) paste0("Consistent channels are reported separately because they are part of ",
          "the conflict mechanism rather than alternatives to it; a non-null ",
-         "indirect effect there is expected and is not a failed placebo.",
+         "indirect effect there is expected and is not a failed placebo.") else "",
          "\\end{minipage}"),
   "\\end{table}"
 )
@@ -158,24 +176,25 @@ cat(sprintf("\nWrote %s  (%d rows across %d panels)\n",
 # --------------------------------------------------------------------------- #
 cat("\n=== RIVAL MECHANISMS: is the indirect effect null? ===\n")
 print(med |> filter(is_rival) |>
-        select(level, mediator_label, iv_label, indirect_ab,
+        dplyr::select(level, mediator_label, iv_label, indirect_ab,
                indirect_ci_low, indirect_ci_high, verdict),
       n = Inf)
 
-n_rival   <- sum(is_rival)
-n_covered <- sum(is_rival & med$covers_zero)
+n_rival   <- sum(is_rival & !is.na(med$covers_zero))
+n_covered <- sum(is_rival & med$covers_zero, na.rm = TRUE)
+if (anyNA(med$covers_zero)) cat("  WARNING:", sum(is.na(med$covers_zero)), "row(s) have no bootstrap interval (mediator not estimated).\n")
 cat(sprintf("\n  %d of %d rival-mechanism indirect effects have a CI covering zero.\n",
             n_covered, n_rival))
 if (n_covered < n_rival) {
   cat("  The ones that do NOT are listed below -- these need a sentence in the text.\n")
-  print(med |> filter(is_rival, !covers_zero) |>
-          select(level, mediator_label, iv_label, indirect_ab, pct_med_disp), n = Inf)
+  print(med |> filter(is_rival, !is.na(covers_zero), !covers_zero) |>
+          dplyr::select(level, mediator_label, iv_label, indirect_ab, pct_med_disp), n = Inf)
 }
 
 cat("\n=== CONSISTENT CHANNELS (expected to mediate) ===\n")
 cc <- med |> filter(!is_rival)
 if (nrow(cc)) {
-  print(cc |> select(level, mediator_label, iv_label, indirect_ab, verdict), n = Inf)
+  print(cc |> dplyr::select(level, mediator_label, iv_label, indirect_ab, verdict), n = Inf)
   cat("\n  NOTE: battle deaths is a CONSISTENT channel, not a rival mechanism --\n")
   cat("  war severity is part of the conflict mechanism. If you would rather not\n")
   cat("  report it at all, drop it in 05 and re-run; this script will follow.\n")

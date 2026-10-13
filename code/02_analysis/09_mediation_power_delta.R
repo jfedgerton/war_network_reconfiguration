@@ -1,7 +1,7 @@
 ###############################################################################
 # 09_mediation_battle_deaths.R (formerly 09_mediation_power_delta.R)
 #
-# Mediation / informativeness analysis: War -> Battle Deaths -> log(Churn).
+# Mediation / informativeness analysis: War -> Battle Deaths -> Churn.
 #
 # Battle deaths is treated here as an *informativeness* / intensity measure
 # of the conflict signal, not as an alternative mechanism. Under the
@@ -23,9 +23,9 @@
 #   3. Sensitivity analysis for sequential ignorability
 #   4. Save results + LaTeX tables
 #
-# DV: log(1 + Churn) (matches 02 main spec)
+# DV: churn, not logged (matches 02 main spec)
 # Mediator: log(1 + battle deaths)
-# Controls: partner_war_frac + democracy + autocracy + cinc + major_power + is_isolated_t1
+# Controls: democracy + autocracy + cinc + major_power + is_isolated_t1
 # All panel models: two-way FE (ccode + year), clustered SEs (~ccode + year)
 ###############################################################################
 
@@ -161,28 +161,52 @@ state_churn <- state_churn |>
          partner_fatal_war_frac          = replace_na(partner_fatal_war_frac, 0),
          partner_fatal_war_frac_weighted = replace_na(partner_fatal_war_frac_weighted, 0))
 
-# --- Partner-war control routing by IV severity ---
-# Non-fatal IVs (any MID exposure) -> partner_war_frac_weighted
-# Fatal IVs (battle-death-bearing MIDs) -> partner_fatal_war_frac_weighted
-# State-level churn regressions in this script use the tie-WEIGHTED partner-
-# war exposure (alliance-strength-weighted share of partners at war), which is
-# the harmonized robustness-script default. The unweighted variants are
-# reserved for the main 02_state_level_analysis.R headline tables.
-CTRL_MID   <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_FATAL <- "partner_fatal_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# --- State-level control set ---
+# Non-fatal and fatal IVs share the same state-level controls:
+# democracy + autocracy + cinc + major_power + is_isolated_t1.
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+CTRL_MID   <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+CTRL_FATAL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 ctrl_for_iv <- function(iv) if (grepl("fatal", iv)) CTRL_FATAL else CTRL_MID
 
 # --- Lagged IVs / lead DV (kept for downstream temporal robustness) ---
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
 state_churn <- state_churn |>
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn[c("ccode", "year")]))
+state_churn <- state_churn |>
+  mutate(mid_onset_lag1 = onset_lag1) |>   # legacy name used below
   group_by(ccode) |>
-  arrange(year) |>
-  mutate(
-    mid_onset_lag1       = lag(mid_onset_count, 1),
-    fatal_onset_lag1     = lag(fatal_mid_onset_count, 1),
-    log_onset_lag1       = lag(log_mid_onset_count, 1),
-    log_fatal_onset_lag1 = lag(log_fatal_mid_onset_count, 1),
-    log_churn_lead1      = lead(log_churn, 1)
-  ) |>
+  arrange(year, .by_group = TRUE) |>
+  mutate(log_churn_lead1 = if_else(!is.na(lead(year, 1)) & lead(year, 1) == year + 1, lead(log_churn, 1), NA_real_)) |>
   ungroup()
 
 # --- COW interstate wars: battle deaths ---
@@ -226,10 +250,10 @@ cat(sprintf("  Mediation panel: %d state-years, %d states, %d years\n",
 # ============================================================
 
 run_bk <- function(data, iv, mediator, iv_label, tag_prefix = "") {
-  tag  <- paste0(tag_prefix, iv, "__log_churn")
+  tag  <- paste0(tag_prefix, iv, "__churn")
   ctrl <- ctrl_for_iv(iv)
 
-  f_total <- as.formula(paste("log_churn ~", iv, "+", ctrl,
+  f_total <- as.formula(paste("churn ~", iv, "+", ctrl,
                                 "| ccode + year"))
   m_total <- tryCatch(feols(f_total, data = data, vcov = ~ccode + year),
                       error = function(e) NULL)
@@ -238,7 +262,7 @@ run_bk <- function(data, iv, mediator, iv_label, tag_prefix = "") {
   m_a <- tryCatch(feols(f_a, data = data, vcov = ~ccode + year),
                   error = function(e) NULL)
 
-  f_bc <- as.formula(paste("log_churn ~", iv, "+", mediator, "+", ctrl,
+  f_bc <- as.formula(paste("churn ~", iv, "+", mediator, "+", ctrl,
                             "| ccode + year"))
   m_bc <- tryCatch(feols(f_bc, data = data, vcov = ~ccode + year),
                    error = function(e) NULL)
@@ -256,7 +280,7 @@ run_bk <- function(data, iv, mediator, iv_label, tag_prefix = "") {
   indirect <- a_path * b_path
   pct_mediated <- if (abs(c_total) > 1e-12) indirect / c_total else NA_real_
 
-  cat(sprintf("  %s -> %s -> log_churn: a=%.6f (p=%.3f), b=%.6f (p=%.3f), indirect=%.6f, %%med=%.1f%%\n",
+  cat(sprintf("  %s -> %s -> churn: a=%.6f (p=%.3f), b=%.6f (p=%.3f), indirect=%.6f, %%med=%.1f%%\n",
               iv_label, mediator,
               a_path, ct_a[iv, "Pr(>|t|)"],
               b_path, ct_bc[mediator, "Pr(>|t|)"],
@@ -284,7 +308,9 @@ run_bk <- function(data, iv, mediator, iv_label, tag_prefix = "") {
 }
 
 # IV specifications
+# [2026-10-12] headline IV (fatal MID onset at t-1) listed first.
 iv_specs <- list(
+  list(iv = "log_fatal_onset_lag1",       label = "Log Fatal MID Onset ($t{-}1$)"),
   list(iv = "mid_onset_count",            label = "MID Onset"),
   list(iv = "log_mid_onset_count",        label = "Log MID Onset"),
   list(iv = "fatal_mid_onset_count",      label = "Fatal MID Onset"),
@@ -332,20 +358,22 @@ cat(sprintf("  IKT subsample: %d obs (%d states with 20+ years)\n",
 ikt_results <- list()
 
 # ΔCINC combos removed; live in 16_robustness_alt_mechanisms.R now.
-# Battle-deaths combos retained, with logged DV and full controls
+# Battle-deaths combos retained, with raw-churn DV and full controls
 # matching 02 main spec.
 ikt_combos <- list(
+  list(iv = "log_fatal_onset_lag1",  med = "log_batdeath",
+       label = "LogFatalMID(t-1) -> log_batdeath -> churn"),
   list(iv = "mid_onset_count",       med = "log_batdeath",
-       label = "MID -> log_batdeath -> log_churn"),
+       label = "MID -> log_batdeath -> churn"),
   list(iv = "fatal_mid_onset_count", med = "log_batdeath",
-       label = "FatalMID -> log_batdeath -> log_churn"),
+       label = "FatalMID -> log_batdeath -> churn"),
   list(iv = "log_mid_onset_count",   med = "log_batdeath",
-       label = "LogMID -> log_batdeath -> log_churn"),
+       label = "LogMID -> log_batdeath -> churn"),
   list(iv = "log_fatal_mid_onset_count", med = "log_batdeath",
-       label = "LogFatalMID -> log_batdeath -> log_churn")
+       label = "LogFatalMID -> log_batdeath -> churn")
 )
 
-# Routed per-IV inside the loop (mid vs fatal partner-war control).
+# Routed per-IV inside the loop (mid vs fatal control set).
 ikt_ctrl_terms_for_iv <- function(iv) paste(ctrl_for_iv(iv), "+ ccode_f + year_f")
 
 for (combo in ikt_combos) {
@@ -354,7 +382,7 @@ for (combo in ikt_combos) {
   ikt_ctrl_terms <- ikt_ctrl_terms_for_iv(iv)
 
   d_complete <- med_sub |>
-    filter(!is.na(.data[[iv]]), !is.na(log_churn),
+    filter(!is.na(.data[[iv]]), !is.na(churn),
            !is.na(.data[[med]])) |>
     droplevels()
 
@@ -366,7 +394,7 @@ for (combo in ikt_combos) {
   cat(sprintf("  Running %s (n=%d)...\n", combo$label, nrow(d_complete)))
 
   f_med <- as.formula(paste(med, "~", iv, "+", ikt_ctrl_terms))
-  f_out <- as.formula(paste("log_churn ~", iv, "+", med, "+", ikt_ctrl_terms))
+  f_out <- as.formula(paste("churn ~", iv, "+", med, "+", ikt_ctrl_terms))
 
   m_med <- tryCatch(lm(f_med, data = d_complete), error = function(e) NULL)
   m_out <- tryCatch(lm(f_out, data = d_complete), error = function(e) NULL)
@@ -415,7 +443,7 @@ cat("\n--- 3. Sensitivity Analysis (battle deaths) ---\n")
 sens_results <- list()
 
 d_sens_bd <- med_sub |>
-  filter(!is.na(fatal_mid_onset_count), !is.na(log_churn),
+  filter(!is.na(fatal_mid_onset_count), !is.na(churn),
          !is.na(log_batdeath)) |>
   droplevels()
 
@@ -423,7 +451,7 @@ if (nrow(d_sens_bd) >= 100) {
   ikt_ctrl_terms_bd <- ikt_ctrl_terms_for_iv("fatal_mid_onset_count")
   f_med_bd <- as.formula(paste("log_batdeath ~ fatal_mid_onset_count +",
                                 ikt_ctrl_terms_bd))
-  f_out_bd <- as.formula(paste("log_churn ~ fatal_mid_onset_count + log_batdeath +",
+  f_out_bd <- as.formula(paste("churn ~ fatal_mid_onset_count + log_batdeath +",
                                 ikt_ctrl_terms_bd))
 
   m_med_bd <- tryCatch(lm(f_med_bd, data = d_sens_bd), error = function(e) NULL)
@@ -450,13 +478,13 @@ if (nrow(d_sens_bd) >= 100) {
           r2_out_at_zero = sens_fit_bd$R2tilde.tau.at.sign.change
         )
 
-        cat(sprintf("  FatalMID -> log_batdeath -> log_churn: rho at ACME=0: %.3f\n",
+        cat(sprintf("  FatalMID -> log_batdeath -> churn: rho at ACME=0: %.3f\n",
                     ifelse(length(sens_fit_bd$rho.at.sign.change) > 0,
                            sens_fit_bd$rho.at.sign.change, NA)))
 
         png(file.path(FIG_DIR, "fig_mediation_sensitivity_batdeath.png"),
             width = 8, height = 6, units = "in", res = 300)
-        plot(sens_fit_bd, main = "Sensitivity: Fatal MID -> Battle Deaths -> log(Churn)",
+        plot(sens_fit_bd, main = "Sensitivity: Fatal MID -> Battle Deaths -> Churn",
              xlab = expression(rho), ylab = "ACME")
         dev.off()
         cat("  Saved sensitivity plot (battle deaths)\n")
@@ -511,7 +539,7 @@ if (nrow(bk_batdeath_df) > 0) {
   tex_lines <- c(
     "\\begin{table}[htbp]",
     "\\centering",
-    "\\caption{Battle Deaths as Informativeness Mediator: Conflict $\\to$ Battle Deaths $\\to$ $\\log(1+\\text{Churn})$.}",
+    "\\caption{Battle Deaths as Informativeness Mediator: Conflict $\\to$ Battle Deaths $\\to$ Churn.}",
     "\\label{tab:mediation_batdeath}",
     "\\footnotesize",
     "\\begin{tabular}{lrrrrrr}",
@@ -537,8 +565,8 @@ if (nrow(bk_batdeath_df) > 0) {
   tex_lines <- c(tex_lines,
     "\\bottomrule",
     "\\multicolumn{7}{l}{\\footnotesize $^*p<0.05$. Two-way FE (state + year), two-way clustered SEs.} \\\\",
-    "\\multicolumn{7}{l}{\\footnotesize DV: $\\log(1+\\text{Churn})$. Mediator: $\\log(1+\\text{Battle Deaths})$.} \\\\",
-    "\\multicolumn{7}{l}{\\footnotesize Controls: \\texttt{partner\\_war\\_frac\\_weighted}, democracy, autocracy, CINC, major power.} \\\\",
+    "\\multicolumn{7}{l}{\\footnotesize DV: Churn. Mediator: $\\log(1+\\text{Battle Deaths})$.} \\\\",
+    "\\multicolumn{7}{l}{\\footnotesize Controls: democracy, autocracy, CINC, major power, isolated at $t-1$.} \\\\",
     "\\end{tabular}",
     "\\end{table}"
   )
@@ -565,7 +593,7 @@ if (nrow(ikt_df) > 0) {
     r <- ikt_df[i, ]
     tex_ikt <- c(tex_ikt, sprintf(
       "%s & %.5f & [%.5f, %.5f] & %.3f & %.5f & %.3f & %.1f \\\\",
-      gsub("->", "$\\\\to$", r$label),
+      gsub("_", "\\\\_", gsub("->", "$\\\\to$", r$label)),  # escape underscores in text mode
       r$acme, r$acme_ci_lo, r$acme_ci_hi, r$acme_p,
       r$ade, r$ade_p,
       ifelse(is.na(r$prop_med), 0, r$prop_med * 100)
@@ -575,7 +603,7 @@ if (nrow(ikt_df) > 0) {
   tex_ikt <- c(tex_ikt,
     "\\bottomrule",
     "\\multicolumn{7}{l}{\\footnotesize Bootstrap (1000 draws). State + year FE.} \\\\",
-    "\\multicolumn{7}{l}{\\footnotesize DV: $\\log(1+\\text{Churn})$. Mediator: $\\log(1+\\text{Battle Deaths})$.} \\\\",
+    "\\multicolumn{7}{l}{\\footnotesize DV: Churn. Mediator: $\\log(1+\\text{Battle Deaths})$.} \\\\",
     "\\end{tabular}",
     "\\end{table}"
   )

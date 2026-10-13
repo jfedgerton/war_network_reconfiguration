@@ -9,8 +9,9 @@
 #   Stage 0: Clean cache (FRESH_RERUN = TRUE wipes multiverse checkpoints)
 #   Stage 1: Data cleaning        code/01_data_cleaning/01-03
 #   Stage 2: Main-text analysis   code/02_analysis/01-06
-#   Stage 3: Appendix robustness  code/02_analysis/07-26
-#   Stage 4: Figures              code/03_figures/01-02
+#   Stage 3: Appendix robustness  code/02_analysis/07-30
+#   Stage 4: Figures              code/03_figures/01-03
+#   Stage 5: Replication sweep    code/04_replication_sweep/run_sweep.R (RUN_STAGE5)
 #
 # Usage:
 #   Rscript run_all.R               # full pipeline, fresh rerun
@@ -163,8 +164,10 @@ step("01_data_cleaning", "01_build_network_layers.R",
      "01 Build network layers (COW, 1816-2014)")
 step("01_data_cleaning", "02_compute_network_measures.R",
      "02 Compute network measures (KL, JS, churn, Leiden)")
-step("01_data_cleaning", "03_compute_spillover_canonical.R",
-     "03 Spillover canonical: inv_dist_to_war + 2-hop (predetermined network)")
+# [2026-10-12] 03_compute_spillover_canonical.R skipped: its only consumer (17_spillover_nonfighters.R) is
+# archived with H3. The script is left in place; uncomment to rebuild the spillover RDS.
+# step("01_data_cleaning", "03_compute_spillover_canonical.R",
+#      "03 Spillover canonical: inv_dist_to_war + 2-hop (predetermined network)")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGE 2: MAIN-TEXT ANALYSIS  (02_analysis/01-06)
@@ -183,19 +186,20 @@ step("02_analysis", "04_robustness_placebos.R",
      "04 Placebo / permutation tests             -> Figure 6 (+ appendix)")
 step("02_analysis", "05_robustness_alt_mechanisms.R",
      "05 Alternative mechanisms (mediation)      -> Figure 7 (+ appendix)")
-step("02_analysis", "06_sensitivity_plots.R",
-     "06 Renders sensitivity figures             -> Figures 6, 7")
+# [2026-10-12] 06 moved to Stage 3, right after 07: it reads robustness_specifications.csv, which 07 writes.
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGE 3: APPENDIX ROBUSTNESS  (02_analysis/07-26)
 # ═══════════════════════════════════════════════════════════════════════════════
-# Nothing in this stage feeds the main text. Safe to skip for a fast rerun.
+# Except 06 (sensitivity figures, which needs 07's multiverse CSV), nothing in this stage feeds the main text.
 # The multiverse (07) is by far the longest-running script here.
 
 cat("\n\n###  STAGE 3: APPENDIX ROBUSTNESS  ###\n\n")
 
 step("02_analysis", "07_robustness_multiverse.R",
      "07 Multiverse: spec curve, meta-regression, LOO")
+step("02_analysis", "06_sensitivity_plots.R",
+     "06 Renders sensitivity figures (needs 04, 05 and 07 outputs) -> Figures 6, 7")
 step("02_analysis", "08_validate_edge_weights.R",
      "08 Edge-weight validation (S-score, AUC, FE)")
 step("02_analysis", "09_mediation_power_delta.R",
@@ -214,10 +218,9 @@ step("02_analysis", "15_igo_density_break.R",
      "15 IGO density structural break")
 step("02_analysis", "16_robustness_igo_cadence.R",
      "16 IGO measurement cadence, leave-IGO-out, 1966+ alt-spec")
-step("02_analysis", "17_spillover_nonfighters.R",
-     "17 Spillover to non-belligerents (H3)")
-step("02_analysis", "18_robustness_excl_belligerent.R",
-     "18 Churn excluding belligerent-belligerent dyads")
+# [2026-10-12] 17 (spillover to non-belligerents, H3) and 18 (churn excluding belligerent dyads, built on the
+# partner-war-exposure control) are archived in code/02_analysis/_archive/. H3 and partner war exposure were
+# dropped from the paper; the peace-dyad panels of Tables 1 and 3 replace the excluded-belligerent check.
 
 # ── Contamination robustness (appendix) ──
 # All three are siblings of 03_contamination_demo.R (main text, Figure 8).
@@ -233,6 +236,28 @@ step("02_analysis", "22_threshold_regime.R",
      "22 Markov-switching + quantile regression")
 step("02_analysis", "23_wild_cluster_bootstrap.R",
      "23 Wild cluster bootstrap inference")
+step("02_analysis", "24_robustness_cinc_nonmobilization.R",
+     "24 CINC without mobilization components / pre-post war windows (R3)")
+
+# Restored 2026-10-01 (from code/02_analysis/_archive and archive/code_archive_20260714/orphans):
+# producers of appendix exhibits that were displayed but no longer regenerated.
+step("02_analysis", "25_robustness_strength_control.R",
+     "25 Strength control (fig_ms_strength_control)")
+step("02_analysis", "26_robustness_gdp_control.R",
+     "26 GDP control (fig_ms_gdp_robustness, tableA_gdp_robustness)")
+step("02_analysis", "27_robustness_nonparticipant_kl.R",
+     "27 Non-participant KL (WWII) robustness")
+step("02_analysis", "28_bayesian_structural_ts.R",
+     "28 Bayesian structural time series (CausalImpact)")
+step("02_analysis", "29_oos_prediction_period.R",
+     "29 Out-of-sample prediction (period holdouts)")
+step("02_analysis", "30_winner_loser_analysis.R",
+     "30 Winner/loser analysis (centrality, war outcome TWFE)")
+
+# Added 2026-10-07: full regression tables behind the main-text figures (appendix section
+# "Full Regression Tables for Main-Text Figures"). Was a standalone script, so its tables went stale.
+step("02_analysis", "export_figure_tables_appendix.R",
+     "Full regression tables for main-text figures (tableA_fig4/6/7/8_*.tex)")
 
 # NOTE: former 15_igo_membership_status.R was ARCHIVED 2026-07-14 -- the file on
 # disk was truncated (unclosed labs() at line 618) and the robustness it tested
@@ -274,6 +299,23 @@ step("03_figures", "02_case_study_map.R",
      "02 Ottoman-Byzantine four-panel map        -> Figure 5")
 step("03_figures", "03_mediation_table.R",
      "03 Mediation LaTeX table (appendix companion to Figure 7)")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE 5: REPLICATION SWEEP  (04_replication_sweep)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Re-estimates published headline models with and without conflict-history
+# controls. Needs the authors' replication data in data/raw/replication_sweep/
+# (code/04_replication_sweep/01_fetch_data.R). Writes est_<id>.rds keyed by study
+# ID only, pooled statistics, and the contamination figures; see that folder's
+# README. Slow network models load cached estimates unless RERUN_SLOW=TRUE.
+RUN_STAGE5 <- as.logical(Sys.getenv("RUN_STAGE5", "FALSE"))   # RUN_STAGE5=FALSE skips the sweep and keeps its existing results
+stopifnot(!is.na(RUN_STAGE5))
+
+if (RUN_STAGE5) {
+  cat("\n\n###  STAGE 5: REPLICATION SWEEP  ###\n\n")
+  step("04_replication_sweep", "run_sweep.R",
+       "Replication sweep -> results/main/fig_contamination_ties + appendix")
+}
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SUMMARY
@@ -320,6 +362,9 @@ cat(sprintf("\n  Full log: %s\n", log_file))
 sink(type = "message")
 sink(type = "output")
 close(log_con)
+
+# Steps run to the end so one failure does not waste a long run, but the pipeline must not look successful.
+if (n_ok < n_total) stop(n_total - n_ok, " of ", n_total, " pipeline steps failed; see ", log_file)
 
 cat(sprintf("\nPipeline complete. %d/%d succeeded. Log: %s\n",
             n_ok, n_total, log_file))

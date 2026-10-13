@@ -35,7 +35,7 @@ Sys.setenv(CONTAM_WORKERS = "1")
 SCRIPTS <- c(
   "03_contamination_demo.R",         # main demo / figure
   "21_contamination_specification.R",# sample/window checks + no-controls ladder
-  "18_robustness_excl_belligerent.R",# belligerent-drop robustness
+  # "18_robustness_excl_belligerent.R" archived 2026-10-12 (built on the partner-war-exposure control)
   "19_contamination_multiverse.R",   # SLOW; 1 worker (see above)
   "20_contamination_falsification.R" # SLOW; permutation null (~80 min)
 )

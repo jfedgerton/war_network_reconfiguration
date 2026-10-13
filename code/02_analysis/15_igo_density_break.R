@@ -149,8 +149,9 @@ cat("  -> fig_ms_igo_density_break.png\n")
 
 # --- System data: same setup as 01_system_level_analysis.R ---
 system_data <- system_data_raw |>
-  filter(!is.na(js_divergence)) |>
   arrange(year) |>
+  # [2026-10-12] conflict lags are built BEFORE dropping years without JS, so 1817 keeps its 1816 conflict
+  (\(d) { stopifnot(all(diff(d$year) == 1)); d })() |>   # consecutive years
   mutate(
     log_mid_count            = log1p(mid_count),
     log_fatal_mid_count      = log1p(fatal_mid_count),
@@ -159,7 +160,7 @@ system_data <- system_data_raw |>
     fatal_mid_count_lag1     = dplyr::lag(fatal_mid_count,     1),
     log_fatal_mid_count_lag1 = dplyr::lag(log_fatal_mid_count, 1)
   ) |>
-  filter(!is.na(mid_count_lag1))
+  filter(!is.na(mid_count_lag1), !is.na(js_divergence))
 
 # --- State controls (mirrors 11_igo_membership_sliding.R) ---
 state_controls_needed <- c("partner_war_frac", "democracy", "autocracy",
@@ -243,6 +244,38 @@ if (!all(state_controls_needed %in% names(state_churn_base))) {
 }
 
 state_churn_base <- state_churn_base |> mutate(log_churn = log1p(churn))
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn_base |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn_base), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
+state_churn_base <- state_churn_base |>
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn_base[c("ccode", "year")]))
 system_data <- system_data |> mutate(log_js_divergence = log1p(js_divergence))
 
 state_data <- state_churn_base |>
@@ -250,15 +283,13 @@ state_data <- state_churn_base |>
          log_fatal_mid_onset_count = log1p(fatal_mid_onset_count)) |>
   filter(!is.na(churn))
 
-# --- Partner-war control routing by IV severity ---
-# Non-fatal IVs (any MID exposure) -> partner_war_frac_weighted
-# Fatal IVs (battle-death-bearing MIDs) -> partner_fatal_war_frac_weighted
-# State-level churn regressions in this script use the tie-WEIGHTED partner-
-# war exposure (alliance-strength-weighted share of partners at war), which is
-# the harmonized robustness-script default. The unweighted variants are
-# reserved for the main 02_state_level_analysis.R headline tables.
-CTRL_MID   <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_FATAL <- "partner_fatal_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# --- State-level control set ---
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+# CTRL_MID and CTRL_FATAL are now identical (democracy + autocracy + cinc +
+# major_power + is_isolated_t1); both names and ctrl_for_iv() are kept so the
+# call sites are unchanged.
+CTRL_MID   <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+CTRL_FATAL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 ctrl_for_iv <- function(iv) if (grepl("fatal", iv)) CTRL_FATAL else CTRL_MID
 
 sys_ctrl_str   <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) + poly(year, 2)"
@@ -270,11 +301,12 @@ sys_ivs <- list(
   list(col = "fatal_mid_count_lag1",     label = "Fatal MID count (t-1)"),
   list(col = "log_fatal_mid_count_lag1", label = "log(1 + Fatal MID count) (t-1)")
 )
+# [2026-10-12] state onset IVs at t-1 (headline timing)
 state_ivs <- list(
-  list(col = "mid_onset_count",           label = "MID onset"),
-  list(col = "log_mid_onset_count",       label = "log(1 + MID onset)"),
-  list(col = "fatal_mid_onset_count",     label = "Fatal MID onset"),
-  list(col = "log_fatal_mid_onset_count", label = "log(1 + Fatal MID onset)")
+  list(col = "onset_lag1",           label = "MID onset (t-1)"),
+  list(col = "log_onset_lag1",       label = "log(1 + MID onset) (t-1)"),
+  list(col = "fatal_onset_lag1",     label = "Fatal MID onset (t-1)"),
+  list(col = "log_fatal_onset_lag1", label = "log(1 + Fatal MID onset) (t-1)")
 )
 
 # ============================================================
@@ -303,11 +335,11 @@ lincom_post <- function(m, iv_term, int_term) {
 
 fit_interaction <- function(level, iv_col, iv_lab, df) {
   if (level == "system") {
-    f <- as.formula(sprintf("log_js_divergence ~ %s * post + %s",
+    f <- as.formula(sprintf("js_divergence ~ %s * post + %s",
                               iv_col, sys_ctrl_str))
     m <- tryCatch(lm(f, data = df), error = function(e) NULL)
   } else {
-    f <- as.formula(sprintf("log_churn ~ %s * post + %s | ccode + year",
+    f <- as.formula(sprintf("churn ~ %s * post + %s | ccode + year",
                               iv_col, ctrl_for_iv(iv_col)))
     m <- tryCatch(feols(f, data = df, cluster = ~ ccode + year),
                    error = function(e) NULL)

@@ -29,8 +29,8 @@ SIGNIF <- c("***" = 0.001, "**" = 0.01, "*" = 0.05, "\\dagger" = 0.10)
 
 # Control sets, hard-coded to match the analysis scripts exactly
 # (02 line 338; 04 lines 183-192; 05 line 161; 03 lines 304-305).
-CTRL_MID     <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_PWE     <- "log_mid_onset_count + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+CTRL_MID     <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 SYS_CTRL_STR <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) + poly(year, 2)"
 NW_LAG       <- 5L
 
@@ -43,10 +43,15 @@ state_panel <- readr::read_csv(file.path(DATA_DIR, "state_churn_data.csv"),
 system_panel <- readr::read_csv(file.path(DATA_DIR, "system_analysis_data.csv"),
                                 show_col_types = FALSE)
 
-stopifnot(all(c("log_churn", "log_mid_onset_count", "partner_war_frac_weighted",
+stopifnot(all(c("churn", "log_mid_onset_count", "log_fatal_mid_onset_count", "log_fatal_onset_lag1",
                 "democracy", "autocracy", "cinc", "major_power",
                 "is_isolated_t1") %in% names(state_panel)))
-stopifnot(all(c("log_js_divergence", "log_mid_count", "log_mid_count_lag1",
+# [2026-10-08] Churn and JS divergence are multiplied by 100 for the appendix tables so that two decimals show
+# every estimate (matches main-text Tables 2 and 4). Tables with other dependent variables keep their scale.
+state_panel$churn <- 100 * state_panel$churn
+system_panel$js_divergence <- 100 * system_panel$js_divergence
+stopifnot(all(c("js_divergence", "log_mid_count", "log_mid_count_lag1",
+                "log_fatal_mid_count", "log_fatal_mid_count_lag1",
                 "n_democracies", "n_autocracies", "n_states", "unit")
               %in% names(system_panel)))
 
@@ -54,18 +59,20 @@ stopifnot(all(c("log_js_divergence", "log_mid_count", "log_mid_count_lag1",
 FIG_DICT <- c(
   log_mid_onset_count       = "log(1 + MID onset)$_{t}$",
   log_mid_count_lag1        = "log(1 + MID count)$_{t-1}$",
-  partner_war_frac_weighted = "Partner war exposure",
+  log_fatal_mid_onset_count = "log(1 + fatal MID onset)$_{t}$",
+  log_fatal_onset_lag1      = "log(1 + fatal MID onset)$_{t-1}$",
+  log_fatal_mid_count_lag1  = "log(1 + fatal MID count)$_{t-1}$",
   iv_lead                   = "IV at lead horizon",
   democracy = "Democracy", autocracy = "Autocracy", cinc = "CINC",
   major_power = "Major power", is_isolated_t1 = "Isolated at $t-1$",
-  log_churn = "log(1 + Churn)", log_js_divergence = "log(1 + JS)",
+  churn = "Churn", js_divergence = "JS divergence",
   ccode = "State", year = "Year",
   "log1p(n_democracies)" = "log(1 + Democracies)",
   "log1p(n_autocracies)" = "log(1 + Autocracies)",
   "log1p(n_states)"      = "log(1 + States)",
-  h0 = "log(1+Churn)$_{t}$",   h1 = "log(1+Churn)$_{t+1}$",
-  h2 = "log(1+Churn)$_{t+2}$", h3 = "log(1+Churn)$_{t+3}$",
-  h4 = "log(1+Churn)$_{t+4}$", h5 = "log(1+Churn)$_{t+5}$",
+  h0 = "Churn$_{t}$",   h1 = "Churn$_{t+1}$",
+  h2 = "Churn$_{t+2}$", h3 = "Churn$_{t+3}$",
+  h4 = "Churn$_{t+4}$", h5 = "Churn$_{t+5}$",
   abs_d_polity2  = "$|\\Delta$ Polity$|$",
   mp_flip        = "Major-power flip",
   tc_event       = "Territorial change",
@@ -101,40 +108,41 @@ cat("\n== Figure 4 tables: panel local projections ==\n")
 
 lp_data <- state_panel |>
   group_by(ccode) |>
-  arrange(year) |>
-  mutate(across(log_churn, list(
+  arrange(year, .by_group = TRUE) |>
+  mutate(across(churn, list(
     h0 = ~.x,
-    h1 = ~lead(.x, 1),
-    h2 = ~lead(.x, 2),
-    h3 = ~lead(.x, 3),
-    h4 = ~lead(.x, 4),
-    h5 = ~lead(.x, 5)
+    h1 = ~if_else(lead(year, 1) == year + 1, lead(.x, 1), NA_real_),   # [2026-10-12] gap-safe, as in 02
+    h2 = ~if_else(lead(year, 2) == year + 2, lead(.x, 2), NA_real_),
+    h3 = ~if_else(lead(year, 3) == year + 3, lead(.x, 3), NA_real_),
+    h4 = ~if_else(lead(year, 4) == year + 4, lead(.x, 4), NA_real_),
+    h5 = ~if_else(lead(year, 5) == year + 5, lead(.x, 5), NA_real_)
   ), .names = "{.fn}")) |>
   ungroup()
 
 lp_mods_full <- list()
 lp_mods_none <- list()
 for (h in 0:5) {
-  fml_full <- as.formula(paste0("h", h, " ~ log_mid_onset_count + ", CTRL_MID,
+  # [2026-10-12] fatal MID onset, matching the main LP figure in 02 (figure1_panel_lp.png)
+  fml_full <- as.formula(paste0("h", h, " ~ log_fatal_mid_onset_count + ", CTRL_MID,
                                 " | ccode + year"))
-  fml_none <- as.formula(paste0("h", h, " ~ log_mid_onset_count | ccode + year"))
+  fml_none <- as.formula(paste0("h", h, " ~ log_fatal_mid_onset_count | ccode + year"))
   lp_mods_full[[h + 1]] <- feols(fml_full, data = lp_data, vcov = ~ccode + year)
   lp_mods_none[[h + 1]] <- feols(fml_none, data = lp_data, vcov = ~ccode + year)
 }
 
 etable(lp_mods_full,
        dict = FIG_DICT, headers = paste0("$h=", 0:5, "$"),
-       signif.code = SIGNIF, digits = 4, digits.stats = 3,
+       signif.code = SIGNIF, digits = "r2", digits.stats = 2,
        fitstat = ~ n + r2, tex = TRUE, replace = TRUE,
-       title = "Full results for Figure 4: panel local projections of $\\log(1+\\text{churn})_{t+h}$ on $\\log(1+\\text{MID onset})_t$, full-controls specification. State and year fixed effects absorbed; standard errors two-way clustered on state and year.",
+       title = "Full results for Figure 4: panel local projections of churn$_{t+h}$ on $\\log(1+\\text{fatal MID onset})_t$, full-controls specification. State and year fixed effects absorbed; standard errors two-way clustered on state and year. Churn coefficients and standard errors are multiplied by 100.",
        label = "tab:fig4_lp_full",
        file  = file.path(APPX_TAB_DIR, "tableA_fig4_lp_full.tex"))
 
 etable(lp_mods_none,
        dict = FIG_DICT, headers = paste0("$h=", 0:5, "$"),
-       signif.code = SIGNIF, digits = 4, digits.stats = 3,
+       signif.code = SIGNIF, digits = "r2", digits.stats = 2,
        fitstat = ~ n + r2, tex = TRUE, replace = TRUE,
-       title = "Full results for Figure 4: panel local projections, no-controls specification (IV and state/year fixed effects only). Standard errors two-way clustered on state and year.",
+       title = "Full results for Figure 4: panel local projections on $\\log(1+\\text{fatal MID onset})_t$, no-controls specification (IV and state/year fixed effects only). Standard errors two-way clustered on state and year. Churn coefficients and standard errors are multiplied by 100.",
        label = "tab:fig4_lp_none",
        file  = file.path(APPX_TAB_DIR, "tableA_fig4_lp_none.tex"))
 
@@ -146,10 +154,10 @@ cat("  -> tableA_fig4_lp_full.tex, tableA_fig4_lp_none.tex\n")
 
 cat("\n== Figure 6 tables: reverse-timing placebos ==\n")
 
-## ---- 2a. State level, MID onset -------------------------------------------
+## ---- 2a. State level, fatal MID onset (baseline at t-1, as in 04) ------------
 plc_state_mid <- list()
 plc_state_mid[["Baseline"]] <- feols(
-  as.formula(paste0("log_churn ~ log_mid_onset_count + ", CTRL_MID,
+  as.formula(paste0("churn ~ log_fatal_onset_lag1 + ", CTRL_MID,
                     " | ccode + year")),
   data = state_panel, cluster = ~ ccode + year)
 
@@ -157,126 +165,55 @@ for (h in c(1L, 3L, 5L, 10L)) {
   d_lead <- state_panel |>
     group_by(ccode) |>
     arrange(year, .by_group = TRUE) |>
-    mutate(iv_lead = lead(log_mid_onset_count, n = h)) |>
+    mutate(iv_lead = if_else(lead(year, h) == year + h, lead(log_fatal_mid_onset_count, n = h), NA_real_)) |>
     ungroup() |>
     filter(!is.na(iv_lead))
   plc_state_mid[[paste0("t+", h)]] <- feols(
-    as.formula(paste0("log_churn ~ iv_lead + ", CTRL_MID, " | ccode + year")),
+    as.formula(paste0("churn ~ iv_lead + ", CTRL_MID, " | ccode + year")),
     data = d_lead, cluster = ~ ccode + year)
 }
 
 etable(plc_state_mid,
        dict = FIG_DICT, headers = names(plc_state_mid),
-       signif.code = SIGNIF, digits = 4, digits.stats = 3,
+       signif.code = SIGNIF, digits = "r2", digits.stats = 2,
        fitstat = ~ n + r2, tex = TRUE, replace = TRUE,
-       title = "Full results for Figure 6, state level (MID onset): baseline and reverse-timing placebos with the IV led to $t+h$. State and year fixed effects absorbed; SEs two-way clustered on state and year.",
+       title = "Full results for Figure 5, state level (fatal MID onset): baseline with the IV at $t-1$ and reverse-timing placebos with the IV led to $t+h$. State and year fixed effects absorbed; SEs two-way clustered on state and year. Churn coefficients and standard errors are multiplied by 100.",
        label = "tab:fig6_state_mid",
        file  = file.path(APPX_TAB_DIR, "tableA_fig6_placebo_state_mid.tex"))
 
-## ---- 2b. State level, partner war exposure (frozen-weight leads) ----------
-# The valid PWE placebo freezes tie weights at t-1 and moves only the
-# partner-conflict indicator to t+h. Rebuilt here exactly as in
-# 04_robustness_placebos.R (build_pwe_future), from the dyadic panel.
-cat("  building frozen-weight PWE leads from dyad_year_network_layers.rds...\n")
-dyad_data <- readRDS(file.path(DATA_DIR, "dyad_year_network_layers.rds"))
-
-if (!"main_weight" %in% names(dyad_data)) {
-  ML_ <- c("layer_offensive", "layer_defensive", "layer_igo")
-  mat_ <- as.matrix(dyad_data[, ML_, drop = FALSE]); mat_[is.na(mat_)] <- 0
-  dyad_data$main_raw <- rowSums(mat_)
-  dyad_data <- dyad_data |>
-    group_by(year) |>
-    mutate(main_weight = if (max(main_raw, na.rm = TRUE) > 0) {
-      main_raw / max(main_raw, na.rm = TRUE)
-    } else 0) |>
-    ungroup()
-  dyad_data$main_raw <- NULL
-}
-
-partner_sets_pl <- dyad_data |>
-  filter(main_weight > 0) |>
-  select(ccode1, ccode2, year, w = main_weight) |>
-  bind_rows(dyad_data |> filter(main_weight > 0) |>
-              select(ccode1 = ccode2, ccode2 = ccode1, year, w = main_weight))
-
-at_war_pl <- dyad_data |>
-  filter(cowmidongoing == 1) |>
-  select(ccode1, ccode2, year) |>
-  pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
-  distinct(ccode, year) |>
-  mutate(flag = 1L)
-
-for (h in c(1L, 3L, 5L, 10L)) {
-  nm <- paste0("pwe_f", h)
-  pf <- partner_sets_pl |>
-    mutate(year_t    = year + 1L,
-           year_flag = year + 1L + h) |>
-    left_join(at_war_pl, by = c("ccode2" = "ccode", "year_flag" = "year")) |>
-    mutate(flag = replace_na(flag, 0L)) |>
-    group_by(ccode1, year_t) |>
-    summarise(!!nm := sum(flag * w) / sum(w), .groups = "drop") |>
-    rename(ccode = ccode1, year = year_t)
-  state_panel <- state_panel |> left_join(pf, by = c("ccode", "year"))
-}
-state_panel <- state_panel |>
-  mutate(across(starts_with("pwe_f"), ~ replace_na(.x, 0)))
-
-plc_state_pwe <- list()
-plc_state_pwe[["Baseline"]] <- feols(
-  as.formula(paste0("log_churn ~ partner_war_frac_weighted + ", CTRL_PWE,
-                    " | ccode + year")),
-  data = state_panel, cluster = ~ ccode + year)
-
-for (h in c(1L, 3L, 5L, 10L)) {
-  d_lead <- state_panel |>
-    mutate(iv_lead = .data[[paste0("pwe_f", h)]]) |>
-    filter(!is.na(iv_lead))
-  plc_state_pwe[[paste0("t+", h)]] <- feols(
-    as.formula(paste0("log_churn ~ iv_lead + ", CTRL_PWE, " | ccode + year")),
-    data = d_lead, cluster = ~ ccode + year)
-}
-
-etable(plc_state_pwe,
-       dict = FIG_DICT, headers = names(plc_state_pwe),
-       signif.code = SIGNIF, digits = 4, digits.stats = 3,
-       fitstat = ~ n + r2, tex = TRUE, replace = TRUE,
-       title = "Full results for Figure 6, state level (partner war exposure): baseline and placebos with tie weights frozen at $t-1$ and only the partner-conflict indicator moved to $t+h$. State and year fixed effects absorbed; SEs two-way clustered on state and year.",
-       label = "tab:fig6_state_pwe",
-       file  = file.path(APPX_TAB_DIR, "tableA_fig6_placebo_state_pwe.tex"))
-
 ## ---- 2c. System level, Newey-West HAC (lag = 5) ---------------------------
-# NOTE: restrict to the baseline's estimation sample (drop the first panel
-# year, where log_mid_count_lag1 is NA). 04_robustness_placebos.R estimated
-# the lead models on this restricted sample, and Figure 6 plots those values;
-# without this filter the lead coefficients differ in the third decimal.
+# NOTE: restrict to the baseline's estimation sample (years with JS and a t-1 conflict count: 1817-2014,
+# N = 198 [2026-10-12: 1817 now keeps its 1816 conflict]). 04_robustness_placebos.R estimates the lead
+# models on the same sample, and Figure 6 plots those values. Table 1 is N = 197 because its AR(1) column
+# needs JS in 1816; the placebo baseline is Table 1 column 2 on one more year.
 # --- Fig 6 system placebo table, on the baseline's estimation sample ---
 system_placebo_panel <- system_panel |>
-  filter(!is.na(log_mid_count_lag1)) |>
+  filter(!is.na(log_mid_count_lag1)) |>   # same first-year drop as 04 (log_fatal_mid_count_lag1 is NA on the same row)
   arrange(year)
 
 plc_sys <- list()
 plc_sys[["Baseline"]] <- feols(
-  as.formula(paste0("log_js_divergence ~ log_mid_count_lag1 + ", SYS_CTRL_STR)),
+  as.formula(paste0("js_divergence ~ log_fatal_mid_count_lag1 + ", SYS_CTRL_STR)),
   data = system_placebo_panel, panel.id = ~ unit + year, vcov = NW(lag = NW_LAG))
 
 for (h in c(1L, 3L, 5L, 10L)) {
   d_lead <- system_placebo_panel |>
-    mutate(iv_lead = lead(log_mid_count, n = h)) |>
+    mutate(iv_lead = lead(log_fatal_mid_count, n = h)) |>
     filter(!is.na(iv_lead))
   plc_sys[[paste0("t+", h)]] <- feols(
-    as.formula(paste0("log_js_divergence ~ iv_lead + ", SYS_CTRL_STR)),
+    as.formula(paste0("js_divergence ~ iv_lead + ", SYS_CTRL_STR)),
     data = d_lead, panel.id = ~ unit + year, vcov = NW(lag = NW_LAG))
 }
 
 etable(plc_sys,
        dict = FIG_DICT, headers = names(plc_sys),
-       signif.code = SIGNIF, digits = 3, digits.stats = 3,
+       signif.code = SIGNIF, digits = "r2", digits.stats = 2,
        fitstat = ~ n + r2, tex = TRUE, replace = TRUE,
-       title = "Full results for Figure 6, system level: baseline and reverse-timing placebos with the MID count led to $t+h$. Newey--West HAC standard errors (lag $=5$); quadratic year trend included.",
+       title = "Full results for Figure 5, system level: baseline (fatal MID count at $t-1$) and reverse-timing placebos with the fatal MID count led to $t+h$. Newey--West HAC standard errors (lag $=5$); quadratic year trend included. JS divergence coefficients and standard errors are multiplied by 100.",
        label = "tab:fig6_system",
        file  = file.path(APPX_TAB_DIR, "tableA_fig6_placebo_system.tex"))
 
-cat("  -> tableA_fig6_placebo_{state_mid,state_pwe,system}.tex\n")
+cat("  -> tableA_fig6_placebo_{state_mid,system}.tex\n")
 
 # =========================================================================== #
 # 3. FIGURE 7 (fig:sen_mediation) — mediation, 4 state + 2 system channels
@@ -286,8 +223,9 @@ cat("  -> tableA_fig6_placebo_{state_mid,state_pwe,system}.tex\n")
 cat("\n== Figure 7 tables: mediation ==\n")
 
 CTRL_MED <- CTRL_MID       # 05 uses the same state control set
-STATE_IV <- "log_mid_onset_count"
-SYS_IV   <- "log_mid_count_lag1"
+# [2026-10-12] focal IVs follow the fatal t-1 headline (as in 05)
+STATE_IV <- "log_fatal_onset_lag1"
+SYS_IV   <- "log_fatal_mid_count_lag1"
 
 # --- Territorial change (COW TC v5), as in 05 ---
 TC_PATH <- here::here("data", "raw", "tc", "tc2018.csv")
@@ -329,14 +267,14 @@ state_count_by_year <- state_panel |>
   summarise(n_states_obs = n_distinct(ccode), .groups = "drop") |>
   arrange(year) |>
   mutate(abs_d_n_states = abs(n_states_obs - lag(n_states_obs))) |>
-  select(year, abs_d_n_states)
+  dplyr::select(year, abs_d_n_states)
 
 system_alt <- system_panel |>
   left_join(tc_system_year, by = "year") |>
   mutate(n_tc_events = replace_na(n_tc_events, 0L)) |>
   left_join(state_count_by_year, by = "year") |>
   mutate(abs_d_n_states = replace_na(abs_d_n_states, 0)) |>
-  filter(!is.na(log_mid_count_lag1))
+  filter(!is.na(log_fatal_mid_count_lag1))
 
 STATE_MEDS <- c("abs_d_polity2", "mp_flip", "tc_event", "delta_cinc")
 SYS_MEDS   <- c("abs_d_n_states", "n_tc_events")
@@ -354,7 +292,7 @@ etable(med_a_state,
        dict = FIG_DICT, headers = unname(FIG_DICT[STATE_MEDS]),
        signif.code = SIGNIF, digits = 4, digits.stats = 3,
        fitstat = ~ n + r2, tex = TRUE, replace = TRUE,
-       title = "Full results for Figure 7 (state level), mediator equations (a-path): each candidate mediator regressed on MID onset and the full control set. State and year fixed effects absorbed; SEs two-way clustered.",
+       title = "Full results for Figure 6 (state level), mediator equations (a-path): each candidate mediator regressed on fatal MID onset at $t-1$ and the full control set. State and year fixed effects absorbed; SEs two-way clustered.",
        label = "tab:fig7_state_apath",
        file  = file.path(APPX_TAB_DIR, "tableA_fig7_mediation_state_apath.tex"))
 
@@ -363,16 +301,16 @@ med_bc_state <- list()
 for (md in STATE_MEDS) {
   d_md <- state_alt |> filter(!is.na(.data[[md]]))
   med_bc_state[[md]] <- feols(
-    as.formula(paste0("log_churn ~ ", STATE_IV, " + ", md, " + ", CTRL_MED,
+    as.formula(paste0("churn ~ ", STATE_IV, " + ", md, " + ", CTRL_MED,
                       " | ccode + year")),
     data = d_md, cluster = ~ ccode + year)
 }
 
 etable(med_bc_state,
        dict = FIG_DICT, headers = unname(FIG_DICT[STATE_MEDS]),
-       signif.code = SIGNIF, digits = 4, digits.stats = 3,
+       signif.code = SIGNIF, digits = "r2", digits.stats = 2,
        fitstat = ~ n + r2, tex = TRUE, replace = TRUE,
-       title = "Full results for Figure 7 (state level), outcome equations: churn on MID onset, the candidate mediator (column header), and the full control set. Indirect effects in Figure 7 are $a \\times b$ with cluster-bootstrap CIs. State and year fixed effects absorbed; SEs two-way clustered.",
+       title = "Full results for Figure 6 (state level), outcome equations: churn on fatal MID onset at $t-1$, the candidate mediator (column header), and the full control set. Indirect effects in Figure 6 are $a \\times b$ with cluster-bootstrap CIs. State and year fixed effects absorbed; SEs two-way clustered. Churn coefficients and standard errors are multiplied by 100.",
        label = "tab:fig7_state_outcome",
        file  = file.path(APPX_TAB_DIR, "tableA_fig7_mediation_state_outcome.tex"))
 
@@ -387,7 +325,7 @@ for (md in SYS_MEDS) {
     as.formula(paste0(md, " ~ ", SYS_IV, " + ", SYS_CTRL_STR)),
     data = d_md, vcov = "iid")
   med_bc_sys[[md]] <- feols(
-    as.formula(paste0("log_js_divergence ~ ", SYS_IV, " + ", md, " + ",
+    as.formula(paste0("js_divergence ~ ", SYS_IV, " + ", md, " + ",
                       SYS_CTRL_STR)),
     data = d_md, vcov = "iid")
 }
@@ -396,9 +334,9 @@ etable(c(med_a_sys, med_bc_sys),
        dict = FIG_DICT,
        headers = c(paste0("a: ", unname(FIG_DICT[SYS_MEDS])),
                    paste0("outcome: ", unname(FIG_DICT[SYS_MEDS]))),
-       signif.code = SIGNIF, digits = 3, digits.stats = 3,
+       signif.code = SIGNIF, digits = "r2", digits.stats = 2,
        fitstat = ~ n + r2, tex = TRUE, replace = TRUE,
-       title = "Full results for Figure 7 (system level): mediator equations (first two columns) and outcome equations (last two columns), with full system controls and quadratic year trend. Classical SEs, matching the estimation in the mediation script; indirect-effect CIs in Figure 7 are case-bootstrap over years.",
+       title = "Full results for Figure 6 (system level): mediator equations (first two columns) and outcome equations (last two columns), with full system controls and quadratic year trend. Classical SEs, matching the estimation in the mediation script; indirect-effect CIs in Figure 6 are case-bootstrap over years. Coefficients and standard errors in the JS divergence equations (columns 3--4) are multiplied by 100.",
        label = "tab:fig7_system",
        file  = file.path(APPX_TAB_DIR, "tableA_fig7_mediation_system.tex"))
 
@@ -476,11 +414,21 @@ for (k in seq_along(LADDER_LAYERS)) {
   cat(sprintf("  -> tableA_fig8_ladder_%s.tex\n", tolower(lyr_name)))
 }
 
-cat("\nAll 12 tables written to results/appendix/.\n")
+# etable prints the dagger in its significance note outside math mode, which does not compile in LaTeX
+# [2026-10-12] explicit list of the tables written above, so retired files (e.g. the PWE placebo table) are not touched
+EXPORTED_TABLES <- c("tableA_fig4_lp_full.tex", "tableA_fig4_lp_none.tex",
+                     "tableA_fig6_placebo_state_mid.tex", "tableA_fig6_placebo_system.tex",
+                     "tableA_fig7_mediation_state_apath.tex", "tableA_fig7_mediation_state_outcome.tex",
+                     "tableA_fig7_mediation_system.tex", "tableA_fig8_step1_ties.tex",
+                     paste0("tableA_fig8_ladder_", tolower(names(LADDER_LAYERS)), ".tex"))
+stopifnot(all(file.exists(file.path(APPX_TAB_DIR, EXPORTED_TABLES))))
+for (f in file.path(APPX_TAB_DIR, EXPORTED_TABLES)) {
+  x <- readLines(f); writeLines(gsub("\\dagger: 0.1", "$\\dagger$: 0.1", x, fixed = TRUE), f)
+}
+cat(sprintf("\nAll %d tables written to results/appendix/.\n", length(EXPORTED_TABLES)))
 cat("Spot-check: the focal coefficients in each table should reproduce the\n")
-cat("point estimates plotted in Figures 4, 6, 7, and 8 (e.g., Fig 4 h=0 full\n")
-cat("controls ~ 0.0036; Fig 6 system baseline ~ 0.178; Fig 8 Alliance baseline\n")
-cat("~ -0.0012 with dyadic-history attenuation ~ 33.7%).\n")
+cat("point estimates plotted in Figures 4, 6, 7, and 8 (compare with the CSVs written by\n")
+cat("02 (LP), 04 (placebos) and 05 (mediation); [2026-10-12] all now use the fatal-MID IVs).\n")
 
 # --------------------------------------------------------------------------- #
 # SI: add a section "Full Regression Tables for Main-Text Figures" that

@@ -80,8 +80,9 @@ cat("Loading data...\n")
 
 # Main-text baseline: lagged IVs, plain OLS (no HAC), no post_1945.
 system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
-  filter(!is.na(js_divergence)) |>
   arrange(year) |>
+  # [2026-10-12] conflict lags are built BEFORE dropping years without JS, so 1817 keeps its 1816 conflict
+  (\(d) { stopifnot(all(diff(d$year) == 1)); d })() |>   # consecutive years
   mutate(
     log_mid_count       = log1p(mid_count),
     log_fatal_mid_count = log1p(fatal_mid_count),
@@ -90,7 +91,7 @@ system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
     fatal_mid_count_lag1     = dplyr::lag(fatal_mid_count,     1),
     log_fatal_mid_count_lag1 = dplyr::lag(log_fatal_mid_count, 1)
   ) |>
-  filter(!is.na(mid_count_lag1))
+  filter(!is.na(mid_count_lag1), !is.na(js_divergence))
 
 state_churn <- readRDS(file.path(OUTPUT_DIR, "state_network_churn.rds"))
 
@@ -175,25 +176,15 @@ if (needs_prep) {
            major_power = replace_na(major_power, 0))
 }
 
-# --- Partner-war control routing by IV severity ---
-# Non-fatal IVs (any MID exposure) -> partner_war_frac_weighted
-# Fatal IVs (battle-death-bearing MIDs) -> partner_fatal_war_frac_weighted
-# State-level churn regressions in this script use the tie-WEIGHTED partner-
-# war exposure (alliance-strength-weighted share of partners at war), which is
-# the harmonized robustness-script default. The unweighted variants are
-# reserved for the main 02_state_level_analysis.R headline tables.
-CTRL_MID   <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-CTRL_FATAL <- "partner_fatal_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
-# When PARTNER-WAR EXPOSURE is itself the focal IV it cannot also sit in the
-# control set. Swap it out and put own-conflict (MID onset) in. This mirrors the
-# main-text TWFE spec (m4 / m5 in 02_state_level_analysis.R), which includes BOTH
-# log_mid_onset_count and partner_war_frac_weighted as regressors — so the PWE
-# placebo is estimated from the same model that produces the H3 estimate.
-CTRL_PWE   <- "log_mid_onset_count + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# --- State-level control set ---
+# Non-fatal and fatal IVs share the same state-level controls:
+# democracy + autocracy + cinc + major_power + is_isolated_t1.
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+CTRL_MID   <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
+CTRL_FATAL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 ctrl_for_iv <- function(iv) {
-  if (grepl("partner", iv))    CTRL_PWE
-  else if (grepl("fatal", iv)) CTRL_FATAL
-  else                          CTRL_MID
+  if (grepl("fatal", iv)) CTRL_FATAL
+  else                     CTRL_MID
 }
 
 state_churn <- state_churn |> mutate(log_churn = log1p(churn))
@@ -207,67 +198,38 @@ system_data <- system_data |>
 state_churn <- state_churn |>
   mutate(log_mid_onset_count       = log1p(mid_onset_count),
          log_fatal_mid_onset_count = log1p(fatal_mid_onset_count))
-
-# ---------------------------------------------------------------------------
-# VALID PWE PLACEBO INPUTS — ties frozen at t-1, partner conflict led forward
-# ---------------------------------------------------------------------------
-# PWE_{i,t} = sum_j w_{ij,t-1} * 1[j in conflict at t] / sum_j w_{ij,t-1}.
-# The tie weights are PREDETERMINED (t-1). A naive lead(PWE, h) leads the WHOLE
-# variable, tie weights included, so lead(PWE,1)_t is built from w_{ij,t} — the
-# network at year t, which is the ENDPOINT of churn_t. That regresses churn on a
-# function of the network churn itself produced: a post-outcome regressor, and an
-# invalid placebo.
-#
-# The VALID placebo freezes the weights at t-1 and moves ONLY the partner-conflict
-# indicator forward:
-#   pwe_f{h}_{i,t} = sum_j w_{ij,t-1} * 1[j in conflict at t+h] / sum_j w_{ij,t-1}
-# Verified in _diagnostic_pwe_onset.R: every lead null, horse race PASSES at all
-# horizons, while PWE at t stays significant (beta = .067, p = .026).
-PLACEBO_LEADS <- c(1L, 3L, 5L, 10L)
-
-if (!"main_weight" %in% names(dyad_data)) {
-  ML_ <- c("layer_offensive", "layer_defensive", "layer_igo")
-  mat_ <- as.matrix(dyad_data[, ML_, drop = FALSE]); mat_[is.na(mat_)] <- 0
-  dyad_data$main_raw <- rowSums(mat_)
-  dyad_data <- dyad_data |>
-    group_by(year) |>
-    mutate(main_weight = if (max(main_raw, na.rm = TRUE) > 0) {
-      main_raw / max(main_raw, na.rm = TRUE)
-    } else 0) |>
-    ungroup()
-  dyad_data$main_raw <- NULL
-}
-
-partner_sets_pl <- dyad_data |>
-  filter(main_weight > 0) |>
-  select(ccode1, ccode2, year, w = main_weight) |>
-  bind_rows(dyad_data |> filter(main_weight > 0) |>
-              select(ccode1 = ccode2, ccode2 = ccode1, year, w = main_weight))
-
-at_war_pl <- dyad_data |>
-  filter(cowmidongoing == 1) |>
-  select(ccode1, ccode2, year) |>
-  pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
-  distinct(ccode, year) |>
-  mutate(flag = 1L)
-
-build_pwe_future <- function(h, name) {
-  partner_sets_pl |>
-    mutate(year_t    = year + 1L,          # year the measure is assigned to
-           year_flag = year + 1L + h) |>   # partner conflict h years ahead
-    left_join(at_war_pl, by = c("ccode2" = "ccode", "year_flag" = "year")) |>
-    mutate(flag = replace_na(flag, 0L)) |>
-    group_by(ccode1, year_t) |>
-    summarise(!!name := sum(flag * w) / sum(w), .groups = "drop") |>
-    rename(ccode = ccode1, year = year_t)
-}
-
-for (h in PLACEBO_LEADS) {
-  state_churn <- state_churn |>
-    left_join(build_pwe_future(h, paste0("pwe_f", h)), by = c("ccode", "year"))
-}
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
 state_churn <- state_churn |>
-  mutate(across(starts_with("pwe_f"), ~ replace_na(.x, 0)))
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn[c("ccode", "year")]))
 
 # ============================================================
 # Baseline models (for reference lines on plots) — 4 IVs each level
@@ -290,40 +252,30 @@ sys_ctrl_str   <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states)
 # "significant t+1 placebo" at the system level. Building leads from the
 # unlagged series (log_mid_count) fixes it.
 #
-# The state baseline IV (log_mid_onset_count) is NOT lagged, so its leads were
-# already genuinely future — which is exactly why the state level never leaked.
+# [2026-10-12] Both baselines are now t-1 IVs (state: log fatal MID onset; system: log fatal MID count).
+# Leads are built from the UNLAGGED series, so lead h is conflict in t+h (genuinely future). Note the
+# horse race below now pairs conflict at t-1 with conflict at t+h; conflict at t is not in that model.
 sys_ivs <- list(
-  list(col = "log_mid_count_lag1", label = "log(1 + MID count) (t-1)",
-       lead_col = "log_mid_count")
+  list(col = "log_fatal_mid_count_lag1", label = "log(1 + Fatal MID count) (t-1)",
+       lead_col = "log_fatal_mid_count")
 )
 
-# PLACEBO IVs at the state level — both headline IVs in the main table:
+# PLACEBO IV at the state level — the headline IV in the main table:
 #   MID onset (H2)             : not lagged, so a plain lead() is genuinely future.
-#   Partner war exposure (H3)  : CANNOT use lead(), see below.
 #
 # `lead_type`:
 #   "shift"    -> build the placebo with lead(lead_col, h)
-#   "prebuilt" -> use the precomputed pwe_f{h} columns (ties frozen at t-1, only
-#                 the partner-conflict indicator moved forward). A naive
-#                 lead(PWE, h) leads the tie weights too, producing a
-#                 post-outcome regressor built from the network at year t — the
-#                 endpoint of churn_t. Verified: with the frozen-tie
-#                 construction, every PWE lead is null and the horse race PASSES
-#                 at all horizons, while PWE at t stays significant.
 state_ivs <- list(
-  list(col = "log_mid_onset_count", label = "log(1 + MID onset)",
-       lead_col = "log_mid_onset_count", lead_type = "shift"),
-  list(col = "partner_war_frac_weighted", label = "Partner war exposure",
-       lead_col = NA_character_, lead_type = "prebuilt")
+  list(col = "log_fatal_onset_lag1", label = "log(1 + Fatal MID onset) (t-1)",
+       lead_col = "log_fatal_mid_onset_count", lead_type = "shift")
 )
 
 # The permutation test shuffles MID ONSET within state, so it only applies to
-# the onset IV. (Permuting PWE would require reshuffling partners' conflict,
-# which is a different null.) Keep the permutation loop on onset alone.
+# the onset IV. Keep the permutation loop on onset alone.
 state_perm_ivs <- state_ivs[1]
 
 fit_state_one <- function(d, iv_col) {
-  f <- as.formula(paste0("log_churn ~ ", iv_col, " + ",
+  f <- as.formula(paste0("churn ~ ", iv_col, " + ",
                           ctrl_for_iv(iv_col), " | ccode + year"))
   feols(f, data = d, cluster = ~ ccode + year)
 }
@@ -336,7 +288,7 @@ fit_state_one <- function(d, iv_col) {
 NW_LAG <- 5L
 
 fit_sys_one <- function(d, iv_col) {
-  f <- as.formula(paste0("log_js_divergence ~ ", iv_col, " + ", sys_ctrl_str))
+  f <- as.formula(paste0("js_divergence ~ ", iv_col, " + ", sys_ctrl_str))
   feols(f, data = d, panel.id = ~ unit + year, vcov = NW(lag = NW_LAG))
 }
 
@@ -371,12 +323,16 @@ state_churn_srt <- state_churn |> arrange(ccode, year)
 
 for (r in seq_len(N_PERMS)) {
   if (r %% 100 == 0) cat(sprintf("  perm %d / %d\n", r, N_PERMS))
-  # Permute MID onset within each state; log version follows.
+  # [2026-10-12] Permute the focal IV (log fatal MID onset at t-1) across years within each state; rows
+  # where the t-1 IV is undefined (state not in the system in t-1) stay NA.
   perm_d <- state_churn_srt |>
     group_by(ccode) |>
     mutate(
-      mid_onset_count     = sample(mid_onset_count),
-      log_mid_onset_count = log1p(mid_onset_count)
+      log_fatal_onset_lag1 = {
+        v_ <- log_fatal_onset_lag1; ok_ <- !is.na(v_)
+        v_[ok_] <- v_[ok_][sample.int(sum(ok_))]
+        v_
+      }
     ) |>
     ungroup()
 
@@ -398,8 +354,8 @@ perm_df <- bind_rows(perm_rows)
 # --- System-level permutation (focal IV: log(1+MID count), lagged) ---
 # Only one unit at the system level, so shuffle the lagged conflict IV
 # across years to break the IV-DV timing alignment, then refit.
-cat("  System-level permutation (log MID count)...\n")
-sys_focal <- "log_mid_count_lag1"
+cat("  System-level permutation (log fatal MID count)...\n")
+sys_focal <- "log_fatal_mid_count_lag1"
 sys_perm_rows <- vector("list", N_PERMS)
 for (r in seq_len(N_PERMS)) {
   perm_sys <- system_data
@@ -408,7 +364,7 @@ for (r in seq_len(N_PERMS)) {
   if (is.null(m)) next
   sys_perm_rows[[r]] <- tibble(
     rep = r, level = "system", term = sys_focal,
-    iv_label = "log(1 + MID count) (t-1)",
+    iv_label = "log(1 + Fatal MID count) (t-1)",
     estimate = unname(coef(m)[sys_focal]),
     se       = sqrt(diag(vcov(m))[sys_focal])
   )
@@ -450,11 +406,11 @@ rev_rows <- list()
 
 # State-level
 for (iv in state_ivs) {
-  # Baseline (IV at t) — pulled from baseline_df once per IV
+  # Baseline (IV at t-1) — pulled from baseline_df once per IV
   rev_rows[[length(rev_rows) + 1]] <- tibble(
     level = "state", iv_label = iv$label, term = iv$col,
     horizon = 0L,
-    spec = "Baseline (IV at t)",
+    spec = "Baseline (IV at t-1)",  # [2026-10-12] both baselines are the t-1 focal IVs; 06 keys on horizon, not this label
     estimate = baseline_df |>
       filter(level == "state", term == iv$col) |> pull(estimate),
     se = baseline_df |>
@@ -462,20 +418,13 @@ for (iv in state_ivs) {
   )
 
   for (h in PLACEBO_LEADS) {
-    d_lead <- if (identical(iv$lead_type, "prebuilt")) {
-      # PWE: ties frozen at t-1, only partner conflict moved to t+h.
-      state_churn |>
-        mutate(iv_lead = .data[[paste0("pwe_f", h)]]) |>
-        filter(!is.na(iv_lead))
-    } else {
-      state_churn |>
+    d_lead <- state_churn |>
         group_by(ccode) |>
         arrange(year, .by_group = TRUE) |>
-        mutate(iv_lead = lead(.data[[iv$lead_col]], n = h)) |>
+        mutate(iv_lead = if_else(lead(year, h) == year + h, lead(.data[[iv$lead_col]], n = h), NA_real_)) |>
         ungroup() |>
         filter(!is.na(iv_lead))
-    }
-    f_lead <- as.formula(paste0("log_churn ~ iv_lead + ", ctrl_for_iv(iv$col),
+    f_lead <- as.formula(paste0("churn ~ iv_lead + ", ctrl_for_iv(iv$col),
                                  " | ccode + year"))
     m_lead <- tryCatch(
       feols(f_lead, data = d_lead, cluster = ~ ccode + year),
@@ -497,7 +446,7 @@ for (iv in sys_ivs) {
   rev_rows[[length(rev_rows) + 1]] <- tibble(
     level = "system", iv_label = iv$label, term = iv$col,
     horizon = 0L,
-    spec = "Baseline (IV at t)",
+    spec = "Baseline (IV at t-1)",  # [2026-10-12] both baselines are the t-1 focal IVs; 06 keys on horizon, not this label
     estimate = baseline_df |>
       filter(level == "system", term == iv$col) |> pull(estimate),
     se = baseline_df |>
@@ -507,9 +456,9 @@ for (iv in sys_ivs) {
   for (h in PLACEBO_LEADS) {
     d_lead <- system_data |>
       arrange(year) |>
-      mutate(iv_lead = lead(.data[[iv$lead_col]], n = h)) |>
+      mutate(iv_lead = if_else(lead(year, h) == year + h, lead(.data[[iv$lead_col]], n = h), NA_real_)) |>
       filter(!is.na(iv_lead))
-    f_lead <- as.formula(paste0("log_js_divergence ~ iv_lead + ", sys_ctrl_str))
+    f_lead <- as.formula(paste0("js_divergence ~ iv_lead + ", sys_ctrl_str))
     m_lead <- tryCatch(
       feols(f_lead, data = d_lead, panel.id = ~ unit + year,
             vcov = NW(lag = NW_LAG)),
@@ -561,22 +510,15 @@ hr_rows <- list()
 # --- State level ---
 for (iv in state_ivs) {
   for (h in PLACEBO_LEADS) {
-    d_hr <- if (identical(iv$lead_type, "prebuilt")) {
-      state_churn |>
-        mutate(iv_t    = .data[[iv$col]],
-               iv_lead = .data[[paste0("pwe_f", h)]]) |>
-        filter(!is.na(iv_lead), !is.na(iv_t))
-    } else {
-      state_churn |>
+    d_hr <- state_churn |>
         group_by(ccode) |>
         arrange(year, .by_group = TRUE) |>
         mutate(iv_t    = .data[[iv$col]],
-               iv_lead = lead(.data[[iv$lead_col]], n = h)) |>
+               iv_lead = if_else(lead(year, h) == year + h, lead(.data[[iv$lead_col]], n = h), NA_real_)) |>
         ungroup() |>
         filter(!is.na(iv_lead), !is.na(iv_t))
-    }
 
-    f_hr <- as.formula(paste0("log_churn ~ iv_t + iv_lead + ",
+    f_hr <- as.formula(paste0("churn ~ iv_t + iv_lead + ",
                                ctrl_for_iv(iv$col), " | ccode + year"))
     m_hr <- tryCatch(feols(f_hr, data = d_hr, cluster = ~ ccode + year),
                      error = function(e) NULL)
@@ -586,7 +528,7 @@ for (iv in state_ivs) {
     for (trm in c("iv_t", "iv_lead")) {
       hr_rows[[length(hr_rows) + 1]] <- tibble(
         level = "state", iv_label = iv$label, term = iv$col, horizon = h,
-        coef_name = if (trm == "iv_t") "Conflict at t"
+        coef_name = if (trm == "iv_t") "Conflict at t-1"
                     else sprintf("Conflict at t+%d", h),
         is_lead   = (trm == "iv_lead"),
         estimate  = unname(cf[trm]),
@@ -602,10 +544,10 @@ for (iv in sys_ivs) {
     d_hr <- system_data |>
       arrange(year) |>
       mutate(iv_t    = .data[[iv$col]],
-             iv_lead = lead(.data[[iv$lead_col]], n = h)) |>
+             iv_lead = if_else(lead(year, h) == year + h, lead(.data[[iv$lead_col]], n = h), NA_real_)) |>
       filter(!is.na(iv_lead), !is.na(iv_t))
 
-    f_hr <- as.formula(paste0("log_js_divergence ~ iv_t + iv_lead + ",
+    f_hr <- as.formula(paste0("js_divergence ~ iv_t + iv_lead + ",
                                sys_ctrl_str))
     m_hr <- tryCatch(
       feols(f_hr, data = d_hr, panel.id = ~ unit + year,
@@ -617,7 +559,7 @@ for (iv in sys_ivs) {
     for (trm in c("iv_t", "iv_lead")) {
       hr_rows[[length(hr_rows) + 1]] <- tibble(
         level = "system", iv_label = iv$label, term = iv$col, horizon = h,
-        coef_name = if (trm == "iv_t") "Conflict at t"
+        coef_name = if (trm == "iv_t") "Conflict at t-1"
                     else sprintf("Conflict at t+%d", h),
         is_lead   = (trm == "iv_lead"),
         estimate  = unname(cf[trm]),
@@ -636,15 +578,14 @@ write_csv(horserace_df,
           file.path(OUTPUT_DIR, "robustness_placebo_horserace.csv"))
 cat(sprintf("  Saved %d horse-race rows\n", nrow(horserace_df)))
 
-cat("\n  Horse-race results (want: 'Conflict at t' SIG, lead NULL):\n")
+cat("\n  Horse-race results (want: 'Conflict at t-1' SIG, lead NULL):\n")
 print(horserace_df |>
         select(level, horizon, coef_name, estimate, ci_low, ci_high, sig),
       n = Inf, digits = 3)
 
 # Explicit verdict per level x IV x horizon.
-# NOTE: must iterate over `term` as well — the state level now has TWO focal
-# IVs (MID onset and partner-war exposure), so (level, horizon) alone returns
-# 4 rows and t_sig/lead_sig would be length-2.
+# NOTE: iterates over `term` as well so that (level, term, horizon) identifies
+# exactly one t / lead pair per verdict.
 cat("\n  Verdict:\n")
 for (lv in unique(horserace_df$level)) {
   terms_lv <- unique(horserace_df$term[horserace_df$level == lv])
@@ -656,9 +597,9 @@ for (lv in unique(horserace_df$level)) {
       if (length(t_sig) != 1L || length(lead_sig) != 1L) next
 
       verdict <- if (t_sig && !lead_sig) {
-        "PASS - lead collapses once conflict at t is controlled"
+        "PASS - lead collapses once conflict at t-1 is controlled"
       } else if (t_sig && lead_sig) {
-        "FLAG - lead SURVIVES controlling for t (anticipation / reverse causation)"
+        "FLAG - lead SURVIVES controlling for t-1 (anticipation / reverse causation)"
       } else if (!t_sig && lead_sig) {
         "FAIL - only the lead is significant"
       } else {
@@ -678,21 +619,21 @@ print(reverse_df, digits = 4)
 cat("\n--- Plotting ---\n")
 
 # Focal IVs only: system log(1+MID count) + state log(1+MID onset).
-panel_lvls <- c("System: log(1 + MID count)", "State: log(1 + MID onset)")
+panel_lvls <- c("System: log(1 + Fatal MID count, t-1)", "State: log(1 + Fatal MID onset, t-1)")
 
 perm_focal <- bind_rows(
-  perm_df |> filter(level == "system", term == "log_mid_count_lag1") |>
+  perm_df |> filter(level == "system", term == "log_fatal_mid_count_lag1") |>
     mutate(panel = panel_lvls[1]),
-  perm_df |> filter(level == "state",  term == "log_mid_onset_count") |>
+  perm_df |> filter(level == "state",  term == "log_fatal_onset_lag1") |>
     mutate(panel = panel_lvls[2])
 ) |>
   mutate(panel = factor(panel, levels = panel_lvls))
 
 # Observed coefficients + two-sided permutation p-values for the two focal IVs.
-obs_sys <- baseline_df |> filter(level == "system", term == "log_mid_count_lag1") |> pull(estimate)
-obs_st  <- baseline_df |> filter(level == "state",  term == "log_mid_onset_count") |> pull(estimate)
-null_sys <- perm_df |> filter(level == "system", term == "log_mid_count_lag1") |> pull(estimate)
-null_st  <- perm_df |> filter(level == "state",  term == "log_mid_onset_count") |> pull(estimate)
+obs_sys <- baseline_df |> filter(level == "system", term == "log_fatal_mid_count_lag1") |> pull(estimate)
+obs_st  <- baseline_df |> filter(level == "state",  term == "log_fatal_onset_lag1") |> pull(estimate)
+null_sys <- perm_df |> filter(level == "system", term == "log_fatal_mid_count_lag1") |> pull(estimate)
+null_st  <- perm_df |> filter(level == "state",  term == "log_fatal_onset_lag1") |> pull(estimate)
 obs_lines <- tibble(
   panel    = factor(panel_lvls, levels = panel_lvls),
   observed = c(obs_sys, obs_st),
@@ -740,9 +681,9 @@ panel_theme <- theme_pres() +
 iv_sys_levels   <- sapply(sys_ivs,   `[[`, "label")
 iv_state_levels <- sapply(state_ivs, `[[`, "label")
 
-spec_levels <- c("Baseline (IV at t)",
+spec_levels <- c("Baseline (IV at t-1)",
                   sprintf("Placebo (IV at t+%d)", PLACEBO_LEADS))
-spec_colors <- c("Baseline (IV at t)" = "gray20",
+spec_colors <- c("Baseline (IV at t-1)" = "gray20",
                   setNames(c(ACCENT, ACCENT2, "#5C8C2A", "#A65A1F"),
                             sprintf("Placebo (IV at t+%d)", PLACEBO_LEADS)))
 
@@ -750,10 +691,10 @@ rev_plot <- reverse_df |>
   mutate(spec = factor(spec, levels = spec_levels))
 
 # Focal IVs only, single row: system log(1+MID count) + state log(1+MID onset).
-panel_lvls_rev <- c("System: log(1 + MID count)", "State: log(1 + MID onset)")
+panel_lvls_rev <- c("System: log(1 + Fatal MID count, t-1)", "State: log(1 + Fatal MID onset, t-1)")
 rev_focal <- rev_plot |>
-  filter((level == "system" & term == "log_mid_count_lag1") |
-         (level == "state"  & term == "log_mid_onset_count")) |>
+  filter((level == "system" & term == "log_fatal_mid_count_lag1") |
+         (level == "state"  & term == "log_fatal_onset_lag1")) |>
   mutate(panel = factor(
     if_else(level == "system", panel_lvls_rev[1], panel_lvls_rev[2]),
     levels = panel_lvls_rev))

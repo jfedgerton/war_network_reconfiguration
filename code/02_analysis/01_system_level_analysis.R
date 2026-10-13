@@ -1,3 +1,5 @@
+# [2026-10-01] Headline DV is RAW (unlogged) JS divergence; conflict counts stay logged.
+# JS is bounded in [0, log 2] with mean ~0.016, so log(1 + JS) ~ JS and the log adds nothing.
 # [2026-09-26] Headline system-level DV switched from KL to Jensen-Shannon (JS)
 # divergence. KL results are retained in results/appendix/kl_canonical/.
 ###############################################################################
@@ -44,11 +46,137 @@ dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
 # 0. Load data
 # --------------------------------------------------------------------------- #
 set.seed(123)
+cat(sprintf("R %s | dynamicmultiplex %s | igraph %s | fixest %s\n",
+            getRversion(), packageVersion("dynamicmultiplex"),
+            packageVersion("igraph"), packageVersion("fixest")))
+
+# Inputs must come from the same (most recent) Stage 1 run: print their mtimes
+# and stop if they were written more than 6 hours apart.
+INPUT_FILES <- file.path(OUTPUT_DIR, c("system_analysis_data.rds", "dyad_year_network_layers.rds"))
+stopifnot(all(file.exists(INPUT_FILES)))
+input_mtime <- file.mtime(INPUT_FILES)
+for (i in seq_along(INPUT_FILES)) cat(sprintf("  input %-32s mtime %s\n", basename(INPUT_FILES[i]), format(input_mtime[i], "%Y-%m-%d %H:%M:%S")))
+if (diff(range(input_mtime)) > as.difftime(6, units = "hours"))
+  stop("input files were written more than 6 hours apart; they are not from one Stage 1 run")
+
 system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds"))
+
+# --------------------------------------------------------------------------- #
+# 0a. Peace-dyad JS divergence [2026-10-12]
+# --------------------------------------------------------------------------- #
+# JS divergence between the year t-1 and year t edge-weight distributions after
+# dropping, from BOTH years, every dyad that is in an ongoing MID in t-1 or t.
+# Computed here from dyad_year_network_layers.rds so that Stage 1 is untouched.
+# kl_divergence() and js_divergence() are copied verbatim from
+# code/01_data_cleaning/02_compute_network_measures.R, and the no-drop version
+# of the same code must reproduce the saved js_divergence exactly.
+kl_divergence <- function(p, q, eps = 1e-10) {
+  p <- p + eps
+  q <- q + eps
+  p <- p / sum(p)
+  q <- q / sum(q)
+  sum(p * log(p / q))
+}
+js_divergence <- function(p, q, eps = 1e-10) {
+  p <- p + eps
+  q <- q + eps
+  p <- p / sum(p)
+  q <- q / sum(q)
+  m <- 0.5 * (p + q)
+  0.5 * kl_divergence(p, m, eps = 0) + 0.5 * kl_divergence(q, m, eps = 0)
+}
+
+cat("Computing peace-dyad JS divergence from dyad_year_network_layers.rds...\n")
+dyad_data <- readRDS(file.path(OUTPUT_DIR, "dyad_year_network_layers.rds"))
+MAIN_WEIGHT_VAR <- "main_weight"
+stopifnot(MAIN_WEIGHT_VAR %in% names(dyad_data), "cowmidongoing" %in% names(dyad_data))
+js_years <- sort(unique(dyad_data$year))
+stopifnot(identical(js_years, sort(unique(system_data$year))))
+
+# year -> edges with positive weight (both stored directions, as in Stage 1)
+js_edges <- lapply(js_years, function(yr) dyad_data |>
+  filter(year == yr, .data[[MAIN_WEIGHT_VAR]] > 0) |>
+  select(ccode1, ccode2, w = !!sym(MAIN_WEIGHT_VAR)))
+names(js_edges) <- js_years
+# year -> belligerent dyads (both directions) with an ongoing MID in that year
+js_opp <- lapply(js_years, function(yr) {
+  o <- dyad_data |> filter(year == yr, cowmidongoing == 1) |> select(ccode1, ccode2)
+  bind_rows(o, o |> rename(ccode1 = ccode2, ccode2 = ccode1)) |> distinct()
+})
+names(js_opp) <- js_years
+# [2026-10-12] year -> dyads (both directions) with an ongoing FATAL MID in that year (headline peace rule)
+js_opp_fatal <- lapply(js_years, function(yr) {
+  o <- dyad_data |> filter(year == yr, cowmidongoing == 1, cowmidfatal == 1) |> select(ccode1, ccode2)
+  bind_rows(o, o |> rename(ccode1 = ccode2, ccode2 = ccode1)) |> distinct()
+})
+names(js_opp_fatal) <- js_years
+
+js_pair <- function(e_t, e_t1) {
+  merged <- full_join(e_t |> rename(w_t = w), e_t1 |> rename(w_t1 = w), by = c("ccode1", "ccode2")) |>
+    mutate(w_t = replace_na(w_t, 0), w_t1 = replace_na(w_t1, 0))
+  if (min(merged$w_t) < 0) merged$w_t <- merged$w_t - min(merged$w_t)
+  if (min(merged$w_t1) < 0) merged$w_t1 <- merged$w_t1 - min(merged$w_t1)
+  js_divergence(merged$w_t, merged$w_t1)
+}
+
+js_peace_rows <- vector("list", length(js_years))
+for (i in seq_along(js_years)) {
+  if (i == 1) { js_peace_rows[[i]] <- tibble(year = js_years[i], js_check = NA_real_, js_divergence_peace = NA_real_, bellig_weight_share = NA_real_,
+                                             js_divergence_peace_ft1 = NA_real_, bellig_weight_share_ft1 = NA_real_); next }
+  e_t  <- js_edges[[i]]; e_t1 <- js_edges[[i - 1]]
+  drop <- bind_rows(js_opp[[i]], js_opp[[i - 1]]) |> distinct() |> mutate(drop = TRUE)
+  e_t_p  <- e_t  |> anti_join(drop, by = c("ccode1", "ccode2"))
+  e_t1_p <- e_t1 |> anti_join(drop, by = c("ccode1", "ccode2"))
+  js_peace_rows[[i]] <- tibble(
+    year = js_years[i],
+    js_check = js_pair(e_t, e_t1),                      # no dyads dropped: must equal the saved js_divergence
+    js_divergence_peace = js_pair(e_t_p, e_t1_p),
+    bellig_weight_share = 1 - sum(e_t_p$w) / sum(e_t$w), # share of year-t tie weight on dyads in a MID in t-1 or t
+    # [2026-10-12] headline peace rule: drop (from both years) dyads in an ongoing FATAL MID in t-1 only
+    js_divergence_peace_ft1 = js_pair(e_t  |> anti_join(js_opp_fatal[[i - 1]], by = c("ccode1", "ccode2")),
+                                      e_t1 |> anti_join(js_opp_fatal[[i - 1]], by = c("ccode1", "ccode2"))),
+    bellig_weight_share_ft1 = 1 - sum((e_t |> anti_join(js_opp_fatal[[i - 1]], by = c("ccode1", "ccode2")))$w) / sum(e_t$w))
+}
+js_peace_df <- bind_rows(js_peace_rows)
+stopifnot(nrow(js_peace_df) == nrow(system_data), !anyDuplicated(js_peace_df$year))
+js_val <- system_data |> select(year, js_divergence) |> inner_join(js_peace_df, by = "year") |> filter(!is.na(js_divergence))
+js_max_diff <- max(abs(js_val$js_check - js_val$js_divergence))
+cat(sprintf("  Validation: no-drop JS vs saved js_divergence, max |diff| = %.3g over %d years\n", js_max_diff, nrow(js_val)))
+if (!(js_max_diff < 1e-10)) stop("peace-dyad JS code does not reproduce the saved js_divergence (max |diff| = ", js_max_diff, ")")
+stopifnot(all(is.na(js_val$js_divergence_peace) == is.na(js_val$js_divergence)),
+          all(is.na(js_val$js_divergence_peace_ft1) == is.na(js_val$js_divergence)))
+system_data <- system_data |> left_join(js_peace_df |> select(-js_check), by = "year")
+
+# Footnote statistics (printed and saved; no prose drafted here)
+js_fn <- system_data |> filter(!is.na(js_divergence), !is.na(js_divergence_peace))
+js_footnote_stats <- tibble(
+  statistic = c("cor_js_all_peace", "mean_js_all", "mean_js_peace",
+                "bellig_weight_share_median", "bellig_weight_share_max", "bellig_weight_share_max_year", "n_years",
+                "cor_js_all_peace_ft1", "mean_js_peace_ft1", "bellig_weight_share_ft1_median", "bellig_weight_share_ft1_max"),
+  value = c(cor(js_fn$js_divergence, js_fn$js_divergence_peace), mean(js_fn$js_divergence), mean(js_fn$js_divergence_peace),
+            median(js_fn$bellig_weight_share), max(js_fn$bellig_weight_share),
+            js_fn$year[which.max(js_fn$bellig_weight_share)], nrow(js_fn),
+            cor(js_fn$js_divergence, js_fn$js_divergence_peace_ft1), mean(js_fn$js_divergence_peace_ft1),
+            median(js_fn$bellig_weight_share_ft1), max(js_fn$bellig_weight_share_ft1)))
+cat("  JS peace-dyad footnote statistics:\n"); print(as.data.frame(js_footnote_stats), digits = 6)
+dir.create(here::here("results", "main"), recursive = TRUE, showWarnings = FALSE)
+write_csv(js_footnote_stats, here::here("results", "main", "js_peace_footnote_stats.csv"))
+rm(dyad_data, js_edges, js_opp, js_opp_fatal); invisible(gc())
 
 # --------------------------------------------------------------------------- #
 # 1. Prepare time series
 # --------------------------------------------------------------------------- #
+
+# [2026-10-12] Conflict lags are built on the full annual series BEFORE dropping years without JS
+# (1816), so 1817 keeps its 1816 conflict count. The AR(1) DV lag is still undefined in 1817.
+stopifnot(all(diff(sort(system_data$year)) == 1), !anyDuplicated(system_data$year))
+sys_conflict_lags <- system_data |>
+  arrange(year) |>
+  transmute(year,
+            mid_count_lag1 = lag(mid_count),
+            log_mid_count_lag1 = lag(log1p(mid_count)),
+            fatal_mid_count_lag1 = lag(fatal_mid_count),
+            log_fatal_mid_count_lag1 = lag(log1p(fatal_mid_count)))
 
 ts_data <- system_data |>
   filter(!is.na(js_divergence)) |>
@@ -56,6 +184,9 @@ ts_data <- system_data |>
     year,
     kl_divergence,
     js_divergence,
+    js_divergence_peace,
+    bellig_weight_share,
+    js_divergence_peace_ft1,
     edge_turnover_pct,
     density_change,
     centralization_change,
@@ -71,13 +202,11 @@ ts_data <- system_data |>
     log_js_divergence = log1p(js_divergence),
     log_mid_count = log1p(mid_count),
     log_fatal_mid_count = log1p(fatal_mid_count),
-    # Lagged IVs for OLS (avoids simultaneity)
-    mid_count_lag1 = lag(mid_count),
-    log_mid_count_lag1 = lag(log_mid_count),
-    fatal_mid_count_lag1 = lag(fatal_mid_count),
-    log_fatal_mid_count_lag1 = lag(log_fatal_mid_count),
     # AR(1) lagged DV — used in the main-table dynamics column
     log_js_divergence_lag1 = lag(log_js_divergence),
+    js_divergence_lag1 = lag(js_divergence),            # AR(1) term for the raw-JS main table
+    js_divergence_peace_lag1 = lag(js_divergence_peace), # AR(1) term for the peace-dyad panels
+    js_divergence_peace_ft1_lag1 = lag(js_divergence_peace_ft1), # AR(1) term for the headline peace panel
     # Period FE: 4 international-order regimes (matches 12_order_period_fe.R)
     order_period = factor(case_when(
       year <= 1913 ~ "Concert of Europe",
@@ -90,7 +219,9 @@ ts_data <- system_data |>
     # `unit` column required by feols panel.id when computing NW HAC SEs
     # on a single time series (treats it as a panel of one unit).
     unit = 1L
-  )
+  ) |>
+  left_join(sys_conflict_lags, by = "year")
+stopifnot(nrow(ts_data) == sum(!is.na(system_data$js_divergence)))
 
 # IVs used inside VAR (contemporaneous)
 war_vars <- c("mid_count", "log_mid_count", "fatal_mid_count", "log_fatal_mid_count")
@@ -123,7 +254,7 @@ CONTROL_TERMS_LOG <- c("log1p(n_democracies)",
 cat("\n========== OLS (lagged IVs, t-1) ==========\n")
 
 build_ols_formula <- function(set, controls, iv) {
-  dv <- if (set == "logged") "log_js_divergence" else "js_divergence"
+  dv <- "js_divergence"   # raw JS in both sets; "logged" now means logged IVs only [2026-10-01]
   iv_var <- if (set == "logged") {
     if (iv == "mid") "log_mid_count_lag1" else "log_fatal_mid_count_lag1"
   } else {
@@ -159,8 +290,8 @@ for (i in seq_len(nrow(ols_grid))) {
 
 # --- VAR / Granger / FEVD with contemporaneous IVs ---
 #
-# TRANSFORMATION: js_divergence is log1p-transformed before entering the
-# VAR (LHS only). KL is non-negative and right-skewed, and right-skewness
+# TRANSFORMATION [2026-10-01]: js_divergence now enters the VAR UNLOGGED (the text below
+# describes the earlier log1p choice, made when the DV was KL). KL is non-negative and right-skewed, and right-skewness
 # on the LHS drives instability of IRF / FEVD coefficients via outlier
 # leverage. Logging fixes that and lets IRF coefficients read as
 # approximate elasticities -- the natural unit for a bidirectional
@@ -189,7 +320,7 @@ build_var_inputs <- function(set, controls, iv) {
   } else {
     if (iv == "mid") "mid_count" else "fatal_mid_count"
   }
-  endo_dv <- if (set == "logged") "log_js_divergence" else "js_divergence"
+  endo_dv <- "js_divergence"   # raw JS in both sets; "logged" now means logged conflict counts only [2026-10-01]
 
   cols_needed <- c(endo_iv, endo_dv)
   if (controls == "full") {
@@ -258,8 +389,12 @@ for (i in seq_len(nrow(var_grid))) {
   print(summary(var_fit$varresult[[inp$endo_dv]]))
 
   # Granger both directions
-  gc_to_kl <- causality(var_fit, cause = inp$endo_iv, boot.runs = 1000)
-  gc_kl_to <- causality(var_fit, cause = inp$endo_dv, boot.runs = 1000)
+  # [2026-10-12] boot = TRUE: without it vars::causality() ignores boot.runs and returns the asymptotic F-test,
+  # while the table note reports 1,000 bootstrap replications. Seeded for reproducibility.
+  set.seed(123)
+  gc_to_kl <- causality(var_fit, cause = inp$endo_iv, boot = TRUE, boot.runs = 1000)
+  set.seed(123)
+  gc_kl_to <- causality(var_fit, cause = inp$endo_dv, boot = TRUE, boot.runs = 1000)
   cat(sprintf("\nGranger: %s -> %s:  F=%.3f, p=%.4f\n",
               inp$endo_iv, inp$endo_dv,
               gc_to_kl$Granger$statistic, gc_to_kl$Granger$p.value))
@@ -420,13 +555,16 @@ SYS_CTRL_FULL <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) 
 # Drop the 1 obs lost to the AR(1) lag so all 4 cols are on the same sample.
 # (Without this, col 3 would have n=196 while others have n=197 — readers
 # don't appreciate the inconsistency, and it's a costless harmonization.)
-ts_data_main <- ts_data |> filter(!is.na(log_js_divergence_lag1),
+ts_data_main <- ts_data |> filter(!is.na(js_divergence_lag1), !is.na(js_divergence_peace_lag1), !is.na(js_divergence_peace_ft1_lag1),
                                     !is.na(mid_count_lag1))
 
-fit_main_table_4col <- function(iv_family) {
-  stopifnot(iv_family %in% c("mid", "fatal"))
+# dv: "js_divergence" (all dyads) or "js_divergence_peace" (belligerent dyads dropped);
+# the AR(1) column uses the lag of the same DV.
+fit_main_table_4col <- function(iv_family, dv = "js_divergence") {
+  stopifnot(iv_family %in% c("mid", "fatal"), dv %in% c("js_divergence", "js_divergence_peace", "js_divergence_peace_ft1"))
   iv_var <- if (iv_family == "mid") "log_mid_count_lag1"
                                      else "log_fatal_mid_count_lag1"
+  dv_lag <- paste0(dv, "_lag1")
 
   # Col 1: IV + quadratic year trend (bivariate-with-trend baseline).
   # Including `poly(year, 2)` here keeps col 1 honest — with 1816--2014
@@ -434,27 +572,27 @@ fit_main_table_4col <- function(iv_family) {
   # bivariate would conflate the MID effect with the trend. All four
   # columns therefore share `poly(year, 2)` as a baseline; the ladder
   # varies by what's added on top.
-  m1 <- feols(as.formula(paste("log_js_divergence ~", iv_var,
+  m1 <- feols(as.formula(paste(dv, "~", iv_var,
                                  "+ poly(year, 2)")),
               data = ts_data_main,
               panel.id = ~unit + year, vcov = NW(lag = NW_LAG))
 
   # Col 2: + full controls (adds n_dem, n_aut, n_states logged on top of
   # the year trend already in col 1).
-  m2 <- feols(as.formula(paste("log_js_divergence ~", iv_var, "+",
+  m2 <- feols(as.formula(paste(dv, "~", iv_var, "+",
                                  SYS_CTRL_FULL)),
               data = ts_data_main,
               panel.id = ~unit + year, vcov = NW(lag = NW_LAG))
 
   # Col 3: + AR(1) lagged DV
-  m3 <- feols(as.formula(paste("log_js_divergence ~", iv_var, "+",
+  m3 <- feols(as.formula(paste(dv, "~", iv_var, "+",
                                  SYS_CTRL_FULL,
-                                 "+ log_js_divergence_lag1")),
+                                 "+", dv_lag)),
               data = ts_data_main,
               panel.id = ~unit + year, vcov = NW(lag = NW_LAG))
 
   # Col 4: + order-period FE (passed via | order_period in feols formula)
-  m4 <- feols(as.formula(paste("log_js_divergence ~", iv_var, "+",
+  m4 <- feols(as.formula(paste(dv, "~", iv_var, "+",
                                  SYS_CTRL_FULL,
                                  "| order_period")),
               data = ts_data_main,
@@ -465,6 +603,15 @@ fit_main_table_4col <- function(iv_family) {
 
 main_4col_mid   <- fit_main_table_4col("mid")
 main_4col_fatal <- fit_main_table_4col("fatal")
+main_4col_mid_peace   <- fit_main_table_4col("mid",   dv = "js_divergence_peace")
+main_4col_fatal_peace <- fit_main_table_4col("fatal", dv = "js_divergence_peace")
+sys_panels <- list(A = main_4col_mid, B = main_4col_mid_peace, C = main_4col_fatal, D = main_4col_fatal_peace)
+for (pn in names(sys_panels)) stopifnot(all(sapply(sys_panels[[pn]], nobs) == 197))
+for (pn in names(sys_panels)) {
+  iv <- if (pn %in% c("A", "B")) "log_mid_count_lag1" else "log_fatal_mid_count_lag1"
+  cat(sprintf("  Panel %s [%s]: %s\n", pn, iv, paste(sapply(sys_panels[[pn]], function(m) {
+    ct <- coeftable(m); sprintf("%.4f (%.4f) p=%.3g", ct[iv, 1], ct[iv, 2], ct[iv, 4]) }), collapse = " | ")))
+}
 
 cat("\n  MID 4-col estimates (HAC NW(5)):\n")
 for (k in names(main_4col_mid)) {
@@ -499,9 +646,16 @@ ols_coef_map_4col <- list(
   "log1p(n_democracies)"         = "$\\log(1{+}\\text{Democracies})$",
   "log1p(n_autocracies)"         = "$\\log(1{+}\\text{Autocracies})$",
   "log1p(n_states)"              = "$\\log(1{+}\\text{States})$",
-  "log_js_divergence_lag1"       = "$\\log(1{+}\\text{JS})_{t{-}1}$ (AR(1))",
+  "js_divergence_lag1"           = "$\\text{JS}_{t{-}1}$ (AR(1))",
   "(Intercept)"                  = "Intercept"
 )
+
+# Tables report coefficients and standard errors multiplied by 100 (two decimals, so no cell rounds to 0.00).
+# The AR(1) lagged-DV coefficient is unchanged by rescaling both the DV and its lag, so it is not multiplied.
+TAB_SCALE <- 100
+tab_coef <- function(ms) lapply(ms, function(m) { b <- coef(m); b * ifelse(grepl("divergence_lag1$", names(b)), 1, TAB_SCALE) })
+tab_se   <- function(ms) lapply(ms, function(m) { s <- se(m);   s * ifelse(grepl("divergence_lag1$", names(s)), 1, TAB_SCALE) })
+TAB_SCALE_NOTE <- "Coefficients and standard errors are multiplied by 100 (the AR(1) coefficient is unaffected by this rescaling). "
 
 write_main_table_4col <- function(models_list, iv_family,
                                     file_path, table_dir_label) {
@@ -512,7 +666,7 @@ write_main_table_4col <- function(models_list, iv_family,
     "$\\log(1{+}\\text{Fatal MID})$"
 
   caption_lead <- if (iv_family == "mid")
-    paste0("System-Level OLS: $\\log(1+\\text{JS})$ on ", iv_short,
+    paste0("System-Level OLS: JS divergence on ", iv_short,
            " (HAC inference throughout). All four columns include a ",
            "quadratic year trend. Each subsequent column tightens one ",
            "identification challenge: column 2 adds observable controls; ",
@@ -520,13 +674,14 @@ write_main_table_4col <- function(models_list, iv_family,
            "DV); column 4 absorbs four international-order regimes via ",
            "fixed effects.")
   else
-    paste0("Appendix. System-Level OLS: $\\log(1+\\text{JS})$ on ",
+    paste0("Appendix. System-Level OLS: JS divergence on ",
            iv_short, " (companion to main-text Table~\\ref{tab:system_main}).")
 
   label_suffix <- if (iv_family == "mid") "system_main" else "system_appx_fatal"
 
+  ms <- list(models_list$m1, models_list$m2, models_list$m3, models_list$m4)
   texreg(
-    list(models_list$m1, models_list$m2, models_list$m3, models_list$m4),
+    ms, override.coef = tab_coef(ms), override.se = tab_se(ms),
     custom.model.names = c("(1) IV + trend",
                             "(2) + Full ctrls",
                             "(3) + AR(1)",
@@ -536,15 +691,15 @@ write_main_table_4col <- function(models_list, iv_family,
     label   = sprintf("tab:%s", label_suffix),
     custom.note = paste0(
       "\\parbox{\\linewidth}{\\vspace{2pt}\\textit{Note:} ",
-      "DV is $\\log(1+\\text{JS})$. IV is ", iv_short, " lagged one ",
+      "DV is JS divergence (not logged). IV is ", iv_short, " lagged one ",
       "period ($t-1$). Newey-West HAC standard errors (lag $=$ 5) in ",
-      "parentheses. \\textbf{All four columns include a quadratic year ",
+      "parentheses. ", TAB_SCALE_NOTE, "\\textbf{All four columns include a quadratic year ",
       "trend (\\texttt{poly(year, 2)}); terms suppressed for legibility.} ",
       "Column 1 is the IV plus the year trend (no other controls). ",
       "Columns 2--4 add the full controls covariate set ",
       "($\\log(1+\\text{Democracies})$, $\\log(1+\\text{Autocracies})$, ",
       "$\\log(1+\\text{States})$). Column 3 additionally controls for ",
-      "$\\log(1+\\text{JS})_{t-1}$ (AR(1) term). Column 4 absorbs ",
+      "$\\text{JS}_{t-1}$ (AR(1) term). Column 4 absorbs ",
       "fixed effects for four international-order regimes (Concert of ",
       "Europe / WWI--Interwar--WWII / Cold War / Post-Cold War). ",
       "COW system, 1816--2014. ",
@@ -553,7 +708,7 @@ write_main_table_4col <- function(models_list, iv_family,
     ),
     stars = c(0.001, 0.01, 0.05, 0.1),
     symbol = "\\dagger",
-    digits = 3,  # JS divergence is on a [0, log 2] scale; 2 digits hides the estimates
+    digits = 2,  # coefficients are x 100 (TAB_SCALE), so two decimals show every estimate
     float.pos = "htbp",
     booktabs = TRUE,
     use.packages = FALSE,
@@ -566,14 +721,180 @@ write_main_table_4col <- function(models_list, iv_family,
               iv_family, basename(file_path), table_dir_label))
 }
 
-# Main text: MID only. Appendix: Fatal MID.
-write_main_table_4col(main_4col_mid, "mid",
-                        file.path(TABLE_DIR, "table1_system_main.tex"),
-                        "main")
-write_main_table_4col(main_4col_fatal, "fatal",
-                        file.path(here::here("results", "appendix"),
-                                  "tableA_system_fatal.tex"),
-                        "appendix")
+# [2026-10-12] Main text: four stacked panels (MID / fatal MID x all dyads / peace dyads).
+# tableA_system_fatal.tex is retired; the fatal results are Panels C-D here.
+# write_main_table_4col() is kept for reference and is no longer called.
+sys_rows <- function(iv_var, dv_lag) list(
+  c(ols_coef_map_4col[[iv_var]], iv_var),
+  c("$\\log(1{+}\\text{Democracies})$", "log1p(n_democracies)"),
+  c("$\\log(1{+}\\text{Autocracies})$", "log1p(n_autocracies)"),
+  c("$\\log(1{+}\\text{States})$",      "log1p(n_states)"),
+  c("$\\text{JS}_{t{-}1}$ (AR(1))",        dv_lag),
+  c("Intercept",                           "(Intercept)"))
+sys_star <- function(p) ifelse(p < 0.001, "^{***}", ifelse(p < 0.01, "^{**}", ifelse(p < 0.05, "^{*}", ifelse(p < 0.1, "^{\\dagger}", ""))))
+sys_panel <- function(models, iv_var, dv_lag) {
+  out <- character(0)
+  for (r in sys_rows(iv_var, dv_lag)) {
+    k <- if (r[2] == dv_lag) 1 else TAB_SCALE     # the AR(1) coefficient is not rescaled
+    est <- se <- character(length(models))
+    for (m in seq_along(models)) {
+      ct <- coeftable(models[[m]])
+      if (r[2] %in% rownames(ct)) {
+        est[m] <- sprintf("$%.2f%s$", k * ct[r[2], 1], sys_star(ct[r[2], 4]))
+        se[m]  <- sprintf("$(%.2f)$", k * ct[r[2], 2])
+      } else { est[m] <- "--"; se[m] <- "" }
+    }
+    out <- c(out, paste(r[1], "&", paste(est, collapse = " & "), "\\\\"), paste(" &", paste(se, collapse = " & "), "\\\\"))
+  }
+  w <- function(m, type) { x <- tryCatch(fixest::r2(m, type), error = function(e) NA); if (is.na(x)) "--" else sprintf("%.2f", x) }
+  g <- function(m) { n <- m$fixef_sizes; if (is.null(n) || !"order_period" %in% names(n)) "--" else as.character(n[["order_period"]]) }
+  c(out, "\\midrule",
+    paste("Num. obs. &", paste(sapply(models, nobs), collapse = " & "), "\\\\"),
+    paste("R$^2$ (full model) &", paste(sapply(models, w, "r2"), collapse = " & "), "\\\\"),
+    paste("R$^2$ (proj model) &", paste(sapply(models, w, "wr2"), collapse = " & "), "\\\\"),
+    paste("Num. groups: Order period &", paste(sapply(models, g), collapse = " & "), "\\\\"))
+}
+sys_panel_titles <- c(
+  A = "Panel A. $\\log(1+\\text{MID count})_{t-1}$; JS divergence over all dyads",
+  B = "Panel B. $\\log(1+\\text{MID count})_{t-1}$; JS divergence over peace dyads only",
+  C = "Panel C. $\\log(1+\\text{fatal MID count})_{t-1}$; JS divergence over all dyads",
+  D = "Panel D. $\\log(1+\\text{fatal MID count})_{t-1}$; JS divergence over peace dyads only")
+sys_ivs  <- c(A = "log_mid_count_lag1", B = "log_mid_count_lag1", C = "log_fatal_mid_count_lag1", D = "log_fatal_mid_count_lag1")
+sys_lags <- c(A = "js_divergence_lag1", B = "js_divergence_peace_lag1", C = "js_divergence_lag1", D = "js_divergence_peace_lag1")
+sys_body <- character(0)
+for (pn in names(sys_panels)) {
+  sys_body <- c(sys_body, if (pn != "A") "\\midrule",
+                sprintf("\\multicolumn{5}{l}{\\textit{%s}} \\\\", sys_panel_titles[[pn]]), "\\midrule",
+                sys_panel(unname(sys_panels[[pn]]), sys_ivs[[pn]], sys_lags[[pn]]))
+}
+sys_note <- paste0(
+  "\\multicolumn{5}{l}{\\scriptsize{\\parbox{\\linewidth}{\\vspace{2pt}\\textit{Note:} ",
+  "DV is JS divergence between the year $t-1$ and year $t$ tie-weight distributions (not logged). ",
+  "Panels B and D drop from both years every dyad that was in an ongoing MID in $t-1$ or $t$ before computing JS; ",
+  "their AR(1) term is the lag of the peace-dyad JS. ",
+  "The conflict measure is $\\log(1+\\text{MID count})$ in Panels A--B and $\\log(1+\\text{fatal MID count})$ in Panels C--D, ",
+  "lagged one period ($t-1$). Newey-West HAC standard errors (lag $=$ 5) in parentheses. ", TAB_SCALE_NOTE,
+  "All four columns include a quadratic year trend (\\texttt{poly(year, 2)}); terms suppressed for legibility. ",
+  "Column 1 is the conflict measure plus the year trend. Columns 2--4 add $\\log(1+\\text{Democracies})$, ",
+  "$\\log(1+\\text{Autocracies})$ and $\\log(1+\\text{States})$. Column 3 additionally controls for the lagged DV (AR(1)). ",
+  "Column 4 absorbs fixed effects for four international-order regimes (Concert of Europe / WWI--Interwar--WWII / Cold War / Post-Cold War). ",
+  "COW system, 1816--2014. $^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.}}} \\\\")
+# [2026-10-12] Split a four-panel table into two floats (Panels A-B; Panels C-D) so neither exceeds a
+# page. Part 2 repeats the column header and note; its caption is prefixed "(Continued)" and its label
+# gets the suffix "_cd". \ContinuedFloat (caption package) keeps one table number for both parts.
+# Fails loudly if the table does not have the expected layout.
+split_ab_cd <- function(tex) {
+  i_top <- which(tex == "\\toprule"); i_bot <- which(tex == "\\bottomrule")
+  i_C   <- grep("textit\\{Panel C\\.", tex)
+  i_cap <- grep("^\\\\caption\\{", tex); i_lab <- grep("^\\\\label\\{", tex)
+  stopifnot(length(i_top) == 1, length(i_bot) == 1, length(i_C) == 1, length(i_cap) == 1, length(i_lab) == 1,
+            tex[i_top + 2] == "\\midrule", tex[i_C - 1] == "\\midrule", i_top + 2 < i_C - 2, i_C < i_bot)
+  pre   <- tex[1:(i_top + 2)]
+  post  <- tex[i_bot:length(tex)]
+  post2 <- post
+  post2[post2 == tex[i_cap]] <- paste0("\\ContinuedFloat ", sub("^\\\\caption\\{", "\\\\caption{(Continued) ", tex[i_cap]))
+  post2[post2 == tex[i_lab]] <- sub("\\}$", "_cd}", tex[i_lab])
+  part1 <- c(pre, tex[(i_top + 3):(i_C - 2)], post)
+  part2 <- c(pre, tex[i_C:(i_bot - 1)], post2)
+  stopifnot(!any(grepl("Panel C\\.|Panel D\\.", part1)), !any(grepl("Panel A\\.|Panel B\\.", part2)),
+            sum(grepl("Panel [AB]\\.", part1)) == 2, sum(grepl("Panel [CD]\\.", part2)) == 2,
+            any(grepl("_cd\\}$", part2)), any(grepl("\\(Continued\\)", part2)), any(grepl("ContinuedFloat", part2)))
+  c(part1, "", part2)
+}
+sys_tex <- c(
+  "\\begin{table}[p]", "\\scriptsize", "\\begin{center}", "\\begin{tabular}{l c c c c}", "\\toprule",
+  " & (1) IV + trend & (2) + Full ctrls & (3) + AR(1) & (4) + Period FE \\\\", "\\midrule",
+  sys_body, "\\bottomrule", sys_note,
+  "\\end{tabular}", "\\end{center}",
+  "\\caption{System-level regressions for conflict and network reconfiguration. MID count (Panels A--B) and fatal MID count (Panels C--D), each with JS divergence over all dyads and over peace dyads only.}",
+  "\\label{tab:system_allmid}", "\\end{table}")
+sys_tex[grepl("^\\\\caption\\{System-level regressions", sys_tex)] <- paste0(
+  "\\caption{Appendix. System-level regressions for all MIDs and fatal MIDs, each with JS divergence over all dyads and over peace dyads ",
+  "(dyads in any MID in $t-1$ or $t$ dropped), companion to main-text Table~\\ref{tab:system_main}.}")
+writeLines(split_ab_cd(sys_tex), file.path(here::here("results", "appendix"), "tableA_system_allmid.tex"))
+cat("  tab:system_allmid -> results/appendix/tableA_system_allmid.tex (Panels A-D, split A-B / C-D)\n")
+
+# =========================================================================== #
+# [2026-10-12] HEADLINE, main-text system table: log(1 + fatal MID count) at t-1.
+#   Panel A: JS over all dyads. Panel B: JS over peace dyads, dropping from both years every dyad in an
+#   ongoing FATAL MID in t-1 (js_divergence_peace_ft1).
+# =========================================================================== #
+hl_sys_panels <- list(A = main_4col_fatal, B = fit_main_table_4col("fatal", dv = "js_divergence_peace_ft1"))
+for (pn in names(hl_sys_panels)) stopifnot(all(sapply(hl_sys_panels[[pn]], nobs) == 197))
+hl_sys_lags <- c(A = "js_divergence_lag1", B = "js_divergence_peace_ft1_lag1")
+hl_sys_titles <- c(
+  A = "Panel A. $\\log(1+\\text{fatal MID count})_{t-1}$; JS divergence over all dyads",
+  B = "Panel B. $\\log(1+\\text{fatal MID count})_{t-1}$; JS divergence over peace dyads (fatal-MID dyads in $t-1$ dropped)")
+hl_sys_body <- character(0)
+for (pn in names(hl_sys_panels)) {
+  hl_sys_body <- c(hl_sys_body, if (pn != "A") "\\midrule",
+                   sprintf("\\multicolumn{5}{l}{\\textit{%s}} \\\\", hl_sys_titles[[pn]]), "\\midrule",
+                   sys_panel(unname(hl_sys_panels[[pn]]), "log_fatal_mid_count_lag1", hl_sys_lags[[pn]]))
+}
+hl_sys_note <- paste0(
+  "\\multicolumn{5}{l}{\\scriptsize{\\parbox{\\linewidth}{\\vspace{2pt}\\textit{Note:} ",
+  "DV is JS divergence between the year $t-1$ and year $t$ tie-weight distributions (not logged). ",
+  "Panel B drops from both years every dyad that was in an ongoing fatal MID in $t-1$ before computing JS; ",
+  "its AR(1) term is the lag of the same peace-dyad JS. ",
+  "The conflict measure is $\\log(1+\\text{fatal MID count})$ lagged one period ($t-1$). ",
+  "Newey-West HAC standard errors (lag $=$ 5) in parentheses. ", TAB_SCALE_NOTE,
+  "All four columns include a quadratic year trend (\\texttt{poly(year, 2)}); terms suppressed for legibility. ",
+  "Column 1 is the conflict measure plus the year trend. Columns 2--4 add $\\log(1+\\text{Democracies})$, ",
+  "$\\log(1+\\text{Autocracies})$ and $\\log(1+\\text{States})$. Column 3 additionally controls for the lagged DV (AR(1)). ",
+  "Column 4 absorbs fixed effects for four international-order regimes (Concert of Europe / WWI--Interwar--WWII / Cold War / Post-Cold War). ",
+  "All MIDs and the any-MID peace rule are in Appendix Table~\\ref{tab:system_allmid}. ",
+  "COW system, 1816--2014. $^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.}}} \\\\")
+hl_sys_tex <- c(
+  "\\begin{table}[p]", "\\scriptsize", "\\begin{center}", "\\begin{tabular}{l c c c c}", "\\toprule",
+  " & (1) IV + trend & (2) + Full ctrls & (3) + AR(1) & (4) + Period FE \\\\", "\\midrule",
+  hl_sys_body, "\\bottomrule", hl_sys_note,
+  "\\end{tabular}", "\\end{center}",
+  "\\caption{System-level regressions for fatal conflict and network reconfiguration. Fatal MID count in $t-1$, with JS divergence over all dyads (Panel A) and over peace dyads (Panel B).}",
+  "\\label{tab:system_main}", "\\end{table}")
+stopifnot(sum(grepl("Fatal MID Count", hl_sys_tex) & grepl("&", hl_sys_tex)) == 2, !any(grepl("Panel C", hl_sys_tex)))
+writeLines(hl_sys_tex, file.path(TABLE_DIR, "table1_system_main.tex"))
+cat("  tab:system_main -> table1_system_main.tex (fatal MID count t-1; Panels A-B)\n")
+write_csv(bind_rows(lapply(names(hl_sys_panels), function(pn) bind_rows(lapply(seq_along(hl_sys_panels[[pn]]), function(m)
+  broom::tidy(hl_sys_panels[[pn]][[m]]) |> mutate(panel = pn, column = m, iv = "log_fatal_mid_count_lag1",
+                                                  dv = if (pn == "A") "js_divergence" else "js_divergence_peace_ft1",
+                                                  nobs = nobs(hl_sys_panels[[pn]][[m]])))))),
+  file.path(OUTPUT_DIR, "table1_system_main_coefs.csv"))
+write_csv(bind_rows(lapply(names(sys_panels), function(pn) bind_rows(lapply(seq_along(sys_panels[[pn]]), function(m)
+  broom::tidy(sys_panels[[pn]][[m]]) |> mutate(panel = pn, column = m, iv = sys_ivs[[pn]],
+                                               dv = if (pn %in% c("A", "C")) "js_divergence" else "js_divergence_peace",
+                                               nobs = nobs(sys_panels[[pn]][[m]])))))),
+  file.path(OUTPUT_DIR, "tableA_system_allmid_coefs.csv"))
+
+# Appendix companion [2026-10-02]: the main table with log(1 + JS) as the DV.
+# The main text and every other appendix model use raw JS; this is the one logged-DV system table.
+stopifnot(all(c("log_js_divergence", "log_js_divergence_lag1") %in% names(ts_data_main)))
+logjs_4col <- list(
+  m1 = feols(log_js_divergence ~ log_fatal_mid_count_lag1 + poly(year, 2),
+             data = ts_data_main, panel.id = ~unit + year, vcov = NW(lag = NW_LAG)),
+  m2 = feols(as.formula(paste("log_js_divergence ~ log_fatal_mid_count_lag1 +", SYS_CTRL_FULL)),
+             data = ts_data_main, panel.id = ~unit + year, vcov = NW(lag = NW_LAG)),
+  m3 = feols(as.formula(paste("log_js_divergence ~ log_fatal_mid_count_lag1 +", SYS_CTRL_FULL, "+ log_js_divergence_lag1")),
+             data = ts_data_main, panel.id = ~unit + year, vcov = NW(lag = NW_LAG)),
+  m4 = feols(as.formula(paste("log_js_divergence ~ log_fatal_mid_count_lag1 +", SYS_CTRL_FULL, "| order_period")),
+             data = ts_data_main, panel.id = ~unit + year, vcov = NW(lag = NW_LAG)))
+stopifnot(all(sapply(logjs_4col, nobs) == nobs(main_4col_mid$m1)))
+texreg(
+  logjs_4col, override.coef = tab_coef(logjs_4col), override.se = tab_se(logjs_4col),
+  custom.model.names = c("(1) IV + trend", "(2) + Full ctrls", "(3) + AR(1)", "(4) + Period FE"),
+  custom.coef.map = c(ols_coef_map_4col[c("log_fatal_mid_count_lag1", "log1p(n_democracies)", "log1p(n_autocracies)", "log1p(n_states)")],
+                      list("log_js_divergence_lag1" = "$\\log(1{+}\\text{JS})_{t{-}1}$ (AR(1))", "(Intercept)" = "Intercept")),
+  caption = paste0("Appendix. System-Level OLS with $\\log(1+\\text{JS})$ as the dependent variable ",
+                   "(companion to main-text Table~\\ref{tab:system_main})."),
+  label = "tab:system_main_logjs",
+  custom.note = paste0(
+    "\\parbox{\\linewidth}{\\vspace{2pt}\\textit{Note:} DV is $\\log(1+\\text{JS divergence})$. ",
+    "IV is $\\log(1{+}\\text{fatal MID count})$ lagged one period ($t-1$). Newey-West HAC standard errors (lag $=$ 5) in parentheses. ", TAB_SCALE_NOTE,
+    "All four columns include a quadratic year trend. Columns and sample match Table~\\ref{tab:system_main}. ",
+    "COW system, 1816--2014. $^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.}"),
+  stars = c(0.001, 0.01, 0.05, 0.1), symbol = "\\dagger", digits = 2, float.pos = "htbp", booktabs = TRUE,
+  use.packages = FALSE, include.rsquared = TRUE, include.adjrs = FALSE, include.nobs = TRUE,
+  file = file.path(here::here("results", "appendix"), "tableA_system_main_logjs.tex"))
+cat("  System main 4-col [log JS companion] -> tableA_system_main_logjs.tex (appendix)\n")
 
 # --- Granger + FEVD tables (one per set) -----------------------------
 
@@ -633,9 +954,9 @@ write_granger_fevd_by_iv <- function(iv_family, file_path, table_dir_label) {
     rF  <- as.numeric(g$rev$Granger$statistic)
     rP  <- as.numeric(g$rev$Granger$p.value)
     fwd_F[j] <- sprintf("%.3f", fF)
-    fwd_p[j] <- sprintf("%.4f%s", fP, star_fn(fP))
+    fwd_p[j] <- if (!is.na(fP) && fP < 0.001) paste0("$<$0.001", star_fn(fP)) else sprintf("%.4f%s", fP, star_fn(fP))   # [2026-10-12] bootstrap p
     rev_F[j] <- sprintf("%.3f", rF)
-    rev_p[j] <- sprintf("%.4f%s", rP, star_fn(rP))
+    rev_p[j] <- if (!is.na(rP) && rP < 0.001) paste0("$<$0.001", star_fn(rP)) else sprintf("%.4f%s", rP, star_fn(rP))
 
     fd <- fevd_results_list[[key]]
     fevd_h$h1[j]  <- sprintf("%.1f\\%%", fd[[g$endo_iv]][1]  * 100)
@@ -644,16 +965,17 @@ write_granger_fevd_by_iv <- function(iv_family, file_path, table_dir_label) {
     fevd_h$h10[j] <- sprintf("%.1f\\%%", fd[[g$endo_iv]][10] * 100)
   }
 
-  caption_lead <- if (iv_family == "mid")
-    paste0("Granger Causality and FEVD: $\\log(1+\\text{MID Count})$ ",
-           "and $\\log(1+\\text{JS Divergence})$. ",
-           "VAR with both endogenous variables logged (mirrors the ",
+  # [2026-10-12] fatal MIDs are the headline (main text); all MIDs are the appendix companion.
+  caption_lead <- if (iv_family == "fatal")
+    paste0("Granger Causality and FEVD: $\\log(1+\\text{Fatal MID Count})$ ",
+           "and JS divergence. ",
+           "VAR with the conflict count logged and JS unlogged (mirrors the ",
            "main-text Table~\\ref{tab:system_main} anchoring).")
   else
     paste0("Appendix. Granger Causality and FEVD: ",
-           "$\\log(1+\\text{Fatal MID Count})$ and ",
-           "$\\log(1+\\text{JS Divergence})$. ",
-           "Companion to main-text Table~\\ref{tab:granger_fevd_mid}.")
+           "$\\log(1+\\text{MID Count})$ and ",
+           "JS divergence. ",
+           "Companion to main-text Table~\\ref{tab:granger_fevd_fatal}.")
 
   tex_lines <- c(
     "\\begin{table}[htbp]",
@@ -670,7 +992,7 @@ write_granger_fevd_by_iv <- function(iv_family, file_path, table_dir_label) {
     "\\multicolumn{3}{l}{\\textit{Panel B: Granger Causality (JS $\\rightarrow$ Conflict)}} \\\\[3pt]",
     paste0("$F$-statistic & ", paste(rev_F, collapse = " & "), " \\\\"),
     paste0("$p$-value & ",     paste(rev_p, collapse = " & "), " \\\\[6pt]"),
-    "\\multicolumn{3}{l}{\\textit{Panel C: FEVD --- \\% of $\\log(1+\\text{JS})$ variance from conflict shocks}} \\\\[3pt]",
+    "\\multicolumn{3}{l}{\\textit{Panel C: FEVD --- \\% of JS divergence variance from conflict shocks}} \\\\[3pt]",
     paste0("$h = 1$ & ",  paste(fevd_h$h1,  collapse = " & "), " \\\\"),
     paste0("$h = 3$ & ",  paste(fevd_h$h3,  collapse = " & "), " \\\\"),
     paste0("$h = 5$ & ",  paste(fevd_h$h5,  collapse = " & "), " \\\\"),
@@ -680,14 +1002,15 @@ write_granger_fevd_by_iv <- function(iv_family, file_path, table_dir_label) {
     "\\par\\vspace{4pt}",
     paste0(
       "{\\footnotesize \\textit{Note:} Granger tests from VAR with ",
-      "AIC-selected lag order and 1,000 bootstrap replications. Both ",
-      "endogenous variables logged ($\\log(1+\\text{JS})$ and ",
-      iv_short, ") to match the main-text Table~",
-      "\\ref{tab:system_main} anchoring. ``no ctrls'' VARs include only ",
+      "AIC-selected lag order and 1,000 bootstrap replications. ",
+      "Endogenous variables are JS divergence (not logged) and ",
+      iv_short, ", to match the ",
+      if (iv_family == "fatal") "main-text Table~\\ref{tab:system_main}" else "Appendix Table~\\ref{tab:system_allmid}",
+      " anchoring. ``no ctrls'' VARs include only ",
       "constant and trend; ``full ctrls'' VARs additionally include ",
       "exogenous $\\log(1+\\text{Democracies})$, ",
       "$\\log(1+\\text{Autocracies})$, $\\log(1+\\text{States})$. Panel C ",
-      "reports the share of forecast variance in $\\log(1+\\text{JS})$ ",
+      "reports the share of forecast variance in JS divergence ",
       "attributable to conflict shocks at horizons $h = 1, 3, 5, 10$ years. ",
       "Raw-scale variants reported in the underlying ",
       "\\texttt{granger\\_results\\_combined.csv} and ",
@@ -707,9 +1030,12 @@ write_granger_fevd_by_iv <- function(iv_family, file_path, table_dir_label) {
 # for fatal IVs and FEVD computed across horizons 1-15) and by 03's
 # fig_granger_forward_vs_reverse.png and fig_fevd_horizon.png. Cite those
 # in the paper instead of generating a redundant standalone fatal table.
-write_granger_fevd_by_iv("mid",
-                          file.path(TABLE_DIR, "table2_granger_fevd_mid.tex"),
+write_granger_fevd_by_iv("fatal",
+                          file.path(TABLE_DIR, "table2_granger_fevd_fatal.tex"),
                           "main")
+write_granger_fevd_by_iv("mid",
+                          file.path(here::here("results", "appendix"), "tableA_granger_fevd_mid.tex"),
+                          "appendix")
 
 # =========================================================================== #
 # FEVD Decomposition Plot — REMOVED (subsumed by 03_robustness.R)
@@ -808,7 +1134,7 @@ tex_lines <- c(tex_lines,
   "\\par\\vspace{4pt}",
   paste0(
     "{\\footnotesize \\textit{Note:} Variables appearing in the main-text ",
-    "Tables~\\ref{tab:system_main} and \\ref{tab:granger_fevd_mid} ",
+    "Tables~\\ref{tab:system_main} and \\ref{tab:granger_fevd_fatal} ",
     "full-control regressions. Both raw and $\\log(1+x)$ forms reported ",
     "for the DV (JS divergence) and IVs (MID count, fatal MID count) so ",
     "readers can see the distributional impact of the transform. ",

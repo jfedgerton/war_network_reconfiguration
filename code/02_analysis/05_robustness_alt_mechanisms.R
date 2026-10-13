@@ -9,7 +9,7 @@
 # mechanism is ruled out.
 #
 # Focal IV (one per level, matching the main-text baseline):
-#   State level  : log(1 + MID onset)            -> log(churn)
+#   State level  : log(1 + MID onset)            -> churn (not logged)
 #   System level : log(1 + MID count), lagged     -> log(KL divergence)
 #
 # Rival mediators:
@@ -83,13 +83,15 @@ cat("Loading data...\n")
 
 # Main-text baseline: lagged system IV, plain OLS.
 system_data <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
-  filter(!is.na(js_divergence)) |>
   arrange(year) |>
+  # [2026-10-12] conflict lags are built BEFORE dropping years without JS, so 1817 keeps its 1816 conflict
+  (\(d) { stopifnot(all(diff(d$year) == 1)); d })() |>   # consecutive years
   mutate(
     log_mid_count      = log1p(mid_count),
-    log_mid_count_lag1 = dplyr::lag(log_mid_count, 1)
+    log_mid_count_lag1 = dplyr::lag(log_mid_count, 1),
+    log_fatal_mid_count_lag1 = dplyr::lag(log1p(fatal_mid_count), 1)
   ) |>
-  filter(!is.na(log_mid_count_lag1))
+  filter(!is.na(log_mid_count_lag1), !is.na(js_divergence))
 
 state_churn <- readRDS(file.path(OUTPUT_DIR, "state_network_churn.rds"))
 dyad_data   <- readRDS(file.path(OUTPUT_DIR, "dyad_year_network_layers.rds"))
@@ -159,12 +161,46 @@ if (needs_prep) {
            major_power               = replace_na(major_power, 0))
 }
 
-# State-level churn control set (tie-weighted partner-war exposure + attrs).
-CTRL <- "partner_war_frac_weighted + democracy + autocracy + cinc + major_power + is_isolated_t1"
+# State-level churn control set (state attributes).
+# [2026-10-12] partner war exposure removed from the control set (H3 dropped from the paper).
+CTRL <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
 
 state_churn <- state_churn |>
   mutate(log_churn           = log1p(churn),
-         log_mid_onset_count = log1p(mid_onset_count))
+         log_mid_onset_count = log1p(mid_onset_count),
+         log_fatal_mid_onset_count = log1p(fatal_mid_onset_count))
+# [2026-10-12] Headline state IVs are onset counts at t-1, taken from the full COW state-year universe in
+# dyad_data (same construction as 01_data_cleaning/02_compute_network_measures.R and 02). The churn panel
+# holds transition rows only, so lagging the previous ROW would drop every state's first transition year.
+# A t-1 value is NA only if the state was not in the system in t-1 (after a COW membership gap).
+onset_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                               dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(u_onset = sum(cowmidonset == 1, na.rm = TRUE),
+                       u_fatal_onset = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(u_onset = as.numeric(tidyr::replace_na(u_onset, 0L)),
+                u_fatal_onset = as.numeric(tidyr::replace_na(u_fatal_onset, 0L)))
+chk_univ <- dplyr::inner_join(state_churn |> dplyr::select(ccode, year, mid_onset_count, fatal_mid_onset_count),
+                              onset_univ, by = c("ccode", "year"))
+stopifnot(nrow(chk_univ) == nrow(state_churn), all(chk_univ$mid_onset_count == chk_univ$u_onset),
+          all(chk_univ$fatal_mid_onset_count == chk_univ$u_fatal_onset))
+rm(chk_univ)
+state_churn <- state_churn |>
+  dplyr::select(-dplyr::any_of(c("onset_lag1", "fatal_onset_lag1", "log_onset_lag1", "log_fatal_onset_lag1"))) |>
+  dplyr::left_join(onset_univ |>
+                     dplyr::transmute(ccode, year = year + 1L,
+                                      onset_lag1 = u_onset, fatal_onset_lag1 = u_fatal_onset,
+                                      log_onset_lag1 = log1p(u_onset), log_fatal_onset_lag1 = log1p(u_fatal_onset)),
+                   by = c("ccode", "year"))
+stopifnot(!anyDuplicated(state_churn[c("ccode", "year")]))
 system_data <- system_data |> mutate(log_js_divergence = log1p(js_divergence))
 
 # --- Territorial change (COW TC v5) ---
@@ -244,9 +280,9 @@ coef_ps <- function(m) 2 * (1 - pnorm(abs(coef(m) / coef_se(m))))
 
 # --- STATE: TWFE (ccode + year), cluster bootstrap over states ---
 bk_state <- function(data, iv, mediator, n_boot = N_BOOT) {
-  f_tot <- as.formula(paste0("log_churn ~ ", iv, " + ", CTRL, " | ccode + year"))
+  f_tot <- as.formula(paste0("churn ~ ", iv, " + ", CTRL, " | ccode + year"))
   f_a   <- as.formula(paste0(mediator, " ~ ", iv, " + ", CTRL, " | ccode + year"))
-  f_bc  <- as.formula(paste0("log_churn ~ ", iv, " + ", mediator, " + ", CTRL,
+  f_bc  <- as.formula(paste0("churn ~ ", iv, " + ", mediator, " + ", CTRL,
                              " | ccode + year"))
   d <- data |> filter(!is.na(.data[[mediator]]))
 
@@ -286,6 +322,8 @@ bk_state <- function(data, iv, mediator, n_boot = N_BOOT) {
     level = "state", iv = iv, mediator = mediator,
     c_total = unname(c_tot), a_path = unname(a), b_path = unname(b),
     c_prime = unname(c_prm),
+    # p-values for c and c' (two-way clustered, from the fits above); read by 03_figures/03_mediation_table.R
+    c_total_p = coeftable(m_tot)[iv, "Pr(>|t|)"], c_prime_p = coeftable(m_bc)[iv, "Pr(>|t|)"],
     indirect_ab = ind, indirect_ci_low = ci_low, indirect_ci_high = ci_high,
     boot_B = n_boot, pct_mediated = pct, n_obs = nobs(m_tot)
   )
@@ -294,9 +332,9 @@ bk_state <- function(data, iv, mediator, n_boot = N_BOOT) {
 # --- SYSTEM: plain OLS, case bootstrap over years (approximate) ---
 bk_system <- function(data, iv, mediator, n_boot = N_BOOT) {
   sys_ctrl <- "log1p(n_democracies) + log1p(n_autocracies) + log1p(n_states) + poly(year, 2)"
-  f_tot <- as.formula(paste0("log_js_divergence ~ ", iv, " + ", sys_ctrl))
+  f_tot <- as.formula(paste0("js_divergence ~ ", iv, " + ", sys_ctrl))
   f_a   <- as.formula(paste0(mediator, " ~ ", iv, " + ", sys_ctrl))
-  f_bc  <- as.formula(paste0("log_js_divergence ~ ", iv, " + ", mediator, " + ", sys_ctrl))
+  f_bc  <- as.formula(paste0("js_divergence ~ ", iv, " + ", mediator, " + ", sys_ctrl))
   d <- data |> filter(!is.na(.data[[mediator]]))
 
   m_tot <- tryCatch(lm(f_tot, data = d), error = function(e) NULL)
@@ -328,6 +366,8 @@ bk_system <- function(data, iv, mediator, n_boot = N_BOOT) {
     level = "system", iv = iv, mediator = mediator,
     c_total = unname(c_tot), a_path = unname(a), b_path = unname(b),
     c_prime = unname(c_prm),
+    # p-values for c and c' (OLS standard errors of the lm fits above); read by 03_figures/03_mediation_table.R
+    c_total_p = summary(m_tot)$coefficients[iv, "Pr(>|t|)"], c_prime_p = summary(m_bc)$coefficients[iv, "Pr(>|t|)"],
     indirect_ab = ind, indirect_ci_low = ci_low, indirect_ci_high = ci_high,
     boot_B = n_boot, pct_mediated = pct, n_obs = nobs(m_tot)
   )
@@ -337,10 +377,11 @@ bk_system <- function(data, iv, mediator, n_boot = N_BOOT) {
 # Run: one focal IV per level, four/two rival mediators
 # ============================================================
 
-cat("\n--- Mediation (log MID onset -> churn; log MID count[t-1] -> JS) ---\n")
+cat("\n--- Mediation (log fatal MID onset[t-1] -> churn; log fatal MID count[t-1] -> JS) ---\n")
 
-STATE_IV <- "log_mid_onset_count"
-SYS_IV   <- "log_mid_count_lag1"
+# [2026-10-12] focal IVs follow the fatal t-1 headline
+STATE_IV <- "log_fatal_onset_lag1"
+SYS_IV   <- "log_fatal_mid_count_lag1"
 
 state_mediators <- list(
   list(col = "abs_d_polity2", label = "|Δ Polity|"),
@@ -362,7 +403,16 @@ for (m in system_mediators) {
   res <- bk_system(system_alt, SYS_IV, m$col)
   if (!is.null(res)) { res$mediator_label <- m$label; med_rows[[length(med_rows) + 1]] <- res }
 }
-med_df <- bind_rows(med_rows)
+med_df <- bind_rows(med_rows) |>
+  # columns 03_figures/03_mediation_table.R needs [2026-10-06]. Every mediator in this script is a RIVAL mechanism
+  # (power, regime, territory, system composition); the battle-deaths channel lives in 09_mediation_power_delta.R.
+  mutate(mediator_type = "Rival mechanism",
+         iv_label = ifelse(level == "state", "log(1 + Fatal MID onset), t-1", "log(1 + Fatal MID count), t-1"))
+# every mediator must produce a row: a failed base fit returns NULL above and would otherwise drop out silently
+if (length(med_rows) != length(state_mediators) + length(system_mediators))
+  stop("mediation: ", length(state_mediators) + length(system_mediators) - length(med_rows), " mediator(s) produced no row (a base model failed to fit)")
+stopifnot(all(c("c_total_p", "c_prime_p", "mediator_type", "iv_label", "mediator_label") %in% names(med_df)),
+          !anyNA(med_df$c_total_p), !anyNA(med_df$c_prime_p))
 
 write_csv(med_df, file.path(OUTPUT_DIR, "robustness_altmech_mediation.csv"))
 cat(sprintf("  Saved %d mediation rows.\n", nrow(med_df)))
@@ -394,7 +444,7 @@ p_indirect <- ggplot(med_plot, aes(x = indirect_ab, y = mediator_label)) +
   facet_wrap(~ level_label, ncol = 1, scales = "free") +
   labs(
     title    = "Alternative-mechanism mediation: indirect effects",
-    subtitle = "Point = indirect effect (a b path product); bar = 95% bootstrap CI. A CI overlapping 0 rules out that channel.",
+    subtitle = "Point = indirect effect (a b path product); bar = 95% bootstrap CI. A CI overlapping 0 gives no evidence for that channel.",
     x = expression("Indirect effect ("*a %*% b*")"), y = NULL
   ) +
   theme_pres() +

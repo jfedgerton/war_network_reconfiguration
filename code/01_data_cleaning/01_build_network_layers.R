@@ -182,7 +182,11 @@ if (!is.null(dca_file)) {
         # Ensure directed dyad ordering matches peacesciencer (ccode1 < ccode2)
         low = pmin(ccode1, ccode2),
         high = pmax(ccode1, ccode2)
-      ) |>
+      )
+    # mirrored directed rows collapse to one undirected dyad-year; they must carry the same DCA value
+    dca_conflict <- dca_clean |> group_by(low, high, year) |> summarise(k = n_distinct(layer_dca), .groups = "drop") |> filter(k > 1)
+    if (nrow(dca_conflict) > 0) stop(nrow(dca_conflict), " DCA dyad-years have conflicting values across duplicate rows")
+    dca_clean <- dca_clean |>
       distinct(low, high, year, .keep_all = TRUE)
 
     # Merge into main data
@@ -323,10 +327,7 @@ for (lv in layer_vars) {
     }
   )
 
-  if (is.null(fit)) {
-    dyad_data[[weighted_name]] <- 0
-    next
-  }
+  if (is.null(fit)) stop("contiguity FE weighting fit failed for ", lv, "; refusing to write an all-zero weighted layer")
 
   # Use predict() — JOP method (avoids residuals naming bug)
   temp_data$pred_values <- predict(fit)
@@ -400,10 +401,7 @@ for (lv in layer_vars) {
     }
   )
 
-  if (is.null(fit)) {
-    dyad_data[[dist_weighted_name]] <- 0
-    next
-  }
+  if (is.null(fit)) stop("distance FE weighting fit failed for ", lv, "; refusing to write an all-zero weighted layer")
 
   # Use predict() — same approach as contiguity weighting
   temp_data$pred_values <- predict(fit)
@@ -547,7 +545,18 @@ dyad_data <- dyad_data |>
   )
 
 # System-level war counts per year (two DVs for analysis)
+# MID columns must be identical on (i,j) and (j,i), so counting only ccode1 < ccode2 loses nothing (fix 2026-10-11:
+# the panel is directed, and summing over all rows double-counted every MID dyad)
+mid_chk <- dyad_data |> select(ccode1, ccode2, year, cowmidongoing, cowmidonset, cowmidfatal)
+mid_rev <- mid_chk |> rename(ccode1 = ccode2, ccode2 = ccode1)
+mid_sym <- inner_join(mid_chk, mid_rev, by = c("ccode1", "ccode2", "year"), suffix = c("", ".r"))
+stopifnot(nrow(mid_chk) > 0, sum(mid_chk$cowmidonset == 1) > 0, !anyDuplicated(mid_chk[c("ccode1", "ccode2", "year")]),
+          nrow(mid_sym) == nrow(mid_chk), sum(mid_chk$ccode1 < mid_chk$ccode2) * 2 == nrow(mid_chk),
+          all(mid_sym$cowmidongoing == mid_sym$cowmidongoing.r), all(mid_sym$cowmidonset == mid_sym$cowmidonset.r),
+          all(mid_sym$cowmidfatal == mid_sym$cowmidfatal.r))
+rm(mid_chk, mid_rev, mid_sym)
 system_war_counts <- dyad_data |>
+  filter(ccode1 < ccode2) |>   # one row per undirected dyad (fix 2026-10-11)
   group_by(year) |>
   summarise(
     mid_count = sum(cowmidongoing == 1, na.rm = TRUE),
@@ -556,6 +565,12 @@ system_war_counts <- dyad_data |>
     fatal_mid_onset_count = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
     .groups = "drop"
   )
+sys_old <- dyad_data |> group_by(year) |>
+  summarise(m = sum(cowmidongoing == 1, na.rm = TRUE), o = sum(cowmidonset == 1, na.rm = TRUE), .groups = "drop")
+stopifnot(nrow(system_war_counts) > 0, sum(system_war_counts$mid_onset_count) > 0,
+          identical(sys_old$year, system_war_counts$year), all(sys_old$m == 2 * system_war_counts$mid_count),
+          all(sys_old$o == 2 * system_war_counts$mid_onset_count))
+rm(sys_old)
 
 # --------------------------------------------------------------------------- #
 # 8. Save outputs

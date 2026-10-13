@@ -1,16 +1,73 @@
 ###############################################################################
 # 03_robustness.R
+# [2026-10-12] Partner war exposure (PWE / PWF) and H3 REMOVED from the multiverse:
+#   no partner_* IVs, no partner-war control (controls are democracy, autocracy,
+#   cinc, major_power, is_isolated_t1), no combo-level PWF computation, no H3 meta-regression.
+#   The `exposure` column is kept for schema stability and is "none" on every state row.
+# [2026-10-12] Also: combo-level churn_alt now covers isolation transitions (canonical four-case rule); the
+#   state strength and system degree count each undirected pair once; churn_alt in a combo's first covered
+#   year is dropped; checkpoints carry a schema stamp (MV_SCHEMA_VERSION)
+#   and mismatched checkpoints stop the run; the timing_fe grid holds the sample fixed across FE structures.
+# [2026-10-12] NEW state-level grid "timing_fe" (see STATE_TFE_* below): IV timing (t, t-1, joint t and t-1)
+#   x FE structure (state+year; state+year+community) x clustering (state+year, year, state,
+#   state+year+community). Written to data/processed/robustness_specifications_timing_fe.csv and
+#   deliberately kept OUT of specs_df, so existing meta-regressions, spec curves and rates are unchanged.
+#   NOTE: old checkpoints do not contain these rows; rerun with ROBUSTNESS_RESET=1.
+# [2026-10-12] NEW dimension "bellig_rule" (see BELLIG_RULES below): which dyads count as belligerent and
+#   are dropped before the DV is computed. none, or {MID onset, ongoing MID} x {any, fatal} x {t-1 and t,
+#   t-1 only}. Crossed with EVERY system and state spec (all IVs, DVs, transforms, models, and the
+#   timing_fe grid). Applies to combo churn (churn_alt), canonical churn (main weight) and every system DV.
+#   specs_df and robustness_specifications.csv keep bellig_rule == "none" only (unchanged meaning); all
+#   rules go to robustness_specifications_bellig.csv.gz; the timing_fe file carries all rules.
+# [2026-10-12] The MAIN state sweep now runs every state IV at t-1 (headline timing); war_variable keeps the base
+#   name. State t-1 IVs come from the full COW state-year universe (first transition year included).
+#   Headline (main-text Table 3 / Table 1 panel B) = "ongoing_fatal_t1". Meta-regression conflict reference
+#   is now "Fatal MIDs" (main text reports fatal MIDs only).
+# [2026-10-13] Two new EXTRA_CTRLS levels (FE_full rows only; see the EXTRA CONTROL SETS block):
+#   "spillover"  = third-party war exposure. Share of a state's tie weight (THIS cell's layers and weighting,
+#                  ties at t-2) held by partners in an ongoing fatal MID in t-1, excluding every partner that
+#                  shares a dispute with the state in t-1 (opponents and co-participants). Same t-1 timing
+#                  as the IV. A control for spillovers (SUTVA), not a hypothesis; H3 stays dropped.
+#   "comm_spill" = the same exposure within the state's canonical Leiden community in t-1 (unweighted share
+#                  of the other members, same-dispute members excluded).
+#   The extra controls now run on log(1 + fatal MID onset) and log(1 + MID onset) (was log MID onset and
+#   log MID count) and on all four state DVs (was the logged pair only), so they cover the headline cell.
+# [2026-10-13, round 5c; Codex audit] (1) The four WEIGHTED methods read the precomputed *_weighted /
+#   *_dist_weighted columns, which the layer transforms never touch, so log1p / zscore cells under a weighted
+#   method were exact duplicates of raw. Those cells are now skipped (system grid); the state grid is raw only
+#   (STATE_TRANSFORMS), as its header always said. Grid counts and shares change. (2) spill_exp_t1 is NA when
+#   its t-2 weight year precedes the cell's coverage start. (3) A row whose extra control was absorbed by the
+#   fixed effects (or whose IV was dropped / whose fit errored) is no longer labelled as estimated: FE_full fits
+#   carry fit_status and non-"ok" rows go to robustness_fit_coverage.csv, not to the results. (4) extra_control
+#   enters the meta-regressions. (5) Directional summaries and BH families exclude Granger F rows. (6) State
+#   Newey-West SEs are fixest panel NW (lags within state), and pooled-model N comes from the fitted model.
+#   (7) Auxiliary FEVD-horizon and leave-one-layer-out VARs use the same exogenous controls (n_states added),
+#   coverage window and consecutive-year rule as the main VAR. (8) The checkpoint stamp includes the layer
+#   combinations and md5 hashes of the inputs; aggregation loads only the expected checkpoint files.
+# [2026-10-13, round 5d; independent audit] Meta-regressions use baseline rows only (extra_control == "none");
+#   each extra control gets its OWN meta-regression (baseline vs that one control, on the cells where the
+#   control is estimated), so no model mixes control measures. log_strength_t1 is NA in a cell's first covered
+#   year (its t-1 ties precede coverage). The GDP merge fails loudly instead of silently dropping the "gdp"
+#   level; the peacesciencer version is in the checkpoint stamp. Fit coverage is reported by IV, DV, layers and
+#   weighting, and extra-control guard skips are recorded. Leave-one-layer-out and layer-specific VARs use the
+#   coverage window, the first-covered-year rule, n_states and the consecutive-year check (no-op boot.runs
+#   removed). The threshold labels in the coefficient/share figure follow ALPHA_ONESIDE. robustness_
+#   specifications.csv is also written before the plotting section, so a plotting error cannot lose it.
+# [2026-10-13, round 5e] Spillover uses only dyads with an actual tie in the cell's layers (see compute_state_spill).
+#   HEADLINE_LAYERS now matches the alphabetical combo names, so the system HAC appendix table is written again.
 # Robustness: Replicate main models across layer combos, weighting schemes,
 # IVs, DVs, and transformations.
 #
 # SYSTEM-LEVEL GRID:
 #   IVs: mid_count, log_mid_count, fatal_mid_count, log_fatal_mid_count
 #         (no onset — ongoing wars reshape system topology, onset is state-level)
-#   Layer combos: all subsets of {offensive, defensive, IGO, trade, DCA}
-#     filtered to require IGO or defensive alliances (24 combos)
+#   Layer combos: all subsets of {offensive, defensive, IGO, trade}
+#     filtered to require IGO or defensive alliances (12 combos; DCA is
+#     excluded from 07, see EXCLUDED_LAYERS)
 #   Weighting: contig Manhattan, contig Euclidean, dist Manhattan,
 #     dist Euclidean, unweighted (5 methods)
-#   Transforms: raw, log(1+x), z-score (3; zscore+euclidean skipped)
+#   Transforms: raw, log(1+x), z-score -- non-raw only under "unweighted" (the weighted methods read
+#     precomputed weighted columns the transforms do not change; see cell_varies_by_transform)
 #   DVs: 5 system-level (KL, JS, edge turnover, degree KL, degree Wasserstein)
 #   Models: OLS full with lagged IVs (t-1, all 5 DVs),
 #     VAR/Granger fwd+rev (4 divergence/degree DVs), LP h=5 (all 5 DVs)
@@ -19,17 +76,17 @@
 #   IVs: 8 total — 4 onset (mid_onset_count, log_mid_onset_count,
 #     fatal_mid_onset_count, log_fatal_mid_onset_count) + 4 count
 #     (mid_count, log_mid_count, fatal_mid_count, log_fatal_mid_count)
-#   Layer combos: same 24
+#   Layer combos: same 12
 #   Weighting: same 5 (raw transform only)
 #   DV: churn (1 - weighted Jaccard)
 #   Clustering: 3 schemes (ccode+year, year, ccode). Leiden community-
 #   clustered SE specs were removed — they affect only inference and
 #   would require per-cell Leiden recomputation across the multiverse,
 #   which is computationally expensive without changing point estimates.
-#   Models: FE_full (TWFE with controls), baseline (no FE, no controls,
-#     focal IV + poly(year, 2) — mirrors Table 3 cols 1-2), full_noFE
-#     (controls but no FE) → 7 models per IV (5 clustering × FE_full +
-#     baseline + full_noFE)
+#   Models: FE_full (TWFE with controls; 3 clustering schemes), baseline (no FE, no controls,
+#     focal IV + poly(year, 2) — mirrors Table 3 col 1), full_noFE and full_noFE_year_poly
+#     (controls but no FE). FE_full also crosses the extra-control dimension (none, gdp, strength,
+#     spillover, comm_spill) on GDP_STRENGTH_IVS x GDP_STRENGTH_DVS.
 #
 # TEMPORAL SUBSETTING:
 #   Layer combos with trade/DCA restricted to years where those layers
@@ -60,6 +117,7 @@ library(furrr)        # parallel apply over (tfm, method, combo) triples
 library(future)
 
 select <- dplyr::select
+set.seed(123)   # before any parallel bootstrap: furrr seed = TRUE derives worker streams from this state (Codex audit 2026-10-01)
 
 # Parallel plan: detect cores and spin up workers. Override with the
 # environment variable ROBUSTNESS_WORKERS if you want to cap manually
@@ -193,6 +251,14 @@ compute_lm_se_ladder <- function(fit, term) {
 dyad_data <- readRDS(file.path(OUTPUT_DIR, "dyad_year_network_layers.rds"))
 metadata <- readRDS(file.path(OUTPUT_DIR, "network_metadata.rds"))
 system_war <- readRDS(file.path(OUTPUT_DIR, "system_war_counts.rds"))
+# [2026-10-12] the multiverse system IV must be the same series 01 uses (system_analysis_data.rds)
+local({
+  sa_ <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds"))
+  m_ <- dplyr::inner_join(system_war |> dplyr::select(year, mid_count, fatal_mid_count),
+                          sa_ |> dplyr::select(year, mid_count, fatal_mid_count), by = "year")
+  stopifnot(nrow(m_) == nrow(sa_), all(m_$mid_count.x == m_$mid_count.y),
+            all(m_$fatal_mid_count.x == m_$fatal_mid_count.y))
+})
 
 MAIN_LAYERS <- c("layer_offensive", "layer_defensive", "layer_igo")
 
@@ -296,25 +362,6 @@ sys_controls <- system_analysis |>
 # Load state data (with controls already merged)
 state_data <- readRDS(file.path(OUTPUT_DIR, "state_level_results.rds"))$data
 
-# Build at-war lookups ONCE for combo-specific weighted PWF computation
-# inside compute_state_churn(). The any-MID and fatal-MID variants mirror
-# script 22 / 25's convention: PWF at year y = weighted fraction of year
-# (y-1)'s partners that are at war at year y.
-# These are captured by furrr::future_map_dfr workers via global capture.
-at_war_lookup_any <- dyad_data |>
-  filter(cowmidongoing == 1L) |>
-  select(ccode1, ccode2, year) |>
-  pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
-  distinct(ccode, year) |>
-  mutate(at_war = 1L)
-
-at_war_lookup_fatal <- dyad_data |>
-  filter(cowmidongoing == 1L, cowmidfatal == 1L) |>
-  select(ccode1, ccode2, year) |>
-  pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
-  distinct(ccode, year) |>
-  mutate(at_war_fatal = 1L)
-
 # Add order_period factor — used by the state_period_fe model class
 # (folded in from former 12_order_period_fe.R). Same 4-regime
 # periodization as 01's Table 1 col 4.
@@ -328,11 +375,9 @@ state_data <- state_data |>
   levels = c("Concert of Europe", "WWI / Interwar / WWII",
              "Cold War", "Post-Cold War")))
 
-# NOTE: spillover specifications (inv_dist_to_war, 2-hop partner war) used
-# to be part of this multiverse but were removed when the manuscript scope
-# narrowed. Spillover analysis now lives entirely in
-# 21_spillover_nonfighters.R, which consumes the canonical RDS produced by
-# 01_data_cleaning/03_compute_spillover_canonical.R.
+# NOTE: the old spillover specifications (inv_dist_to_war, 2-hop partner war) were removed. [2026-10-13] A
+# third-party war-exposure CONTROL is back as the "spillover" / "comm_spill" levels of EXTRA_CTRLS (see
+# compute_state_spill); it is a control for spillovers, not a hypothesis.
 
 # --------------------------------------------------------------------------- #
 # 1. Compute edge weight for a given layer combo + weighting method
@@ -385,9 +430,12 @@ compute_manhattan_vec <- function(data, layers, method) {
 # 2. Compute system-level divergence series
 # --------------------------------------------------------------------------- #
 
-compute_system_dvs <- function(data, manhattan_vec) {
+compute_system_dvs <- function(data, manhattan_vec, drop = NULL) {
   data$w_alt <- manhattan_vec
   years <- sort(unique(data$year))
+  # [2026-10-12] belligerent-dyad rule: drop[year == t] lists the pairs removed from BOTH years of the
+  # t-1 -> t comparison (as in 01's peace-dyad JS). NULL = keep every dyad.
+  drop_keys <- if (is.null(drop)) NULL else split(paste(drop$a, drop$b, sep = "-"), drop$year)
 
   out <- tibble(
     year = years,
@@ -411,6 +459,13 @@ compute_system_dvs <- function(data, manhattan_vec) {
                  c("ccode1", "ccode2", "w_alt")]
     e_t1 <- data[data$year == years[i-1] & data$w_alt > 0,
                  c("ccode1", "ccode2", "w_alt")]
+    if (!is.null(drop_keys)) {
+      dk_i <- drop_keys[[as.character(years[i])]]
+      if (length(dk_i)) {
+        e_t  <- e_t[!paste(pmin(e_t$ccode1, e_t$ccode2), pmax(e_t$ccode1, e_t$ccode2), sep = "-") %in% dk_i, ]
+        e_t1 <- e_t1[!paste(pmin(e_t1$ccode1, e_t1$ccode2), pmax(e_t1$ccode1, e_t1$ccode2), sep = "-") %in% dk_i, ]
+      }
+    }
 
     if (nrow(e_t) == 0 | nrow(e_t1) == 0) next
 
@@ -431,13 +486,16 @@ compute_system_dvs <- function(data, manhattan_vec) {
     out$edge_turnover_pct[i] <- turnover / max(length(union(s_t, s_t1)), 1)
 
     # Graph-level measures
+    # [2026-10-12] one edge per unordered pair (dyad_data stores both directions; degree was doubled)
+    uq <- function(df) df[!duplicated(data.frame(a = pmin(df$ccode1, df$ccode2), b = pmax(df$ccode1, df$ccode2))), ]
+    e_t_u <- uq(e_t); e_t1_u <- uq(e_t1)
     g_t <- tryCatch({
-      g <- graph_from_data_frame(e_t[, c("ccode1", "ccode2")], directed = FALSE)
-      E(g)$weight <- e_t$w_alt; g
+      g <- graph_from_data_frame(e_t_u[, c("ccode1", "ccode2")], directed = FALSE)
+      E(g)$weight <- e_t_u$w_alt; g
     }, error = function(e) NULL)
     g_t1 <- tryCatch({
-      g <- graph_from_data_frame(e_t1[, c("ccode1", "ccode2")], directed = FALSE)
-      E(g)$weight <- e_t1$w_alt; g
+      g <- graph_from_data_frame(e_t1_u[, c("ccode1", "ccode2")], directed = FALSE)
+      E(g)$weight <- e_t1_u$w_alt; g
     }, error = function(e) NULL)
 
     if (!is.null(g_t) && !is.null(g_t1)) {
@@ -472,9 +530,67 @@ compute_system_dvs <- function(data, manhattan_vec) {
 # 3. Compute state-level churn for a given layer combo
 # --------------------------------------------------------------------------- #
 
-compute_state_churn <- function(data, manhattan_vec,
-                                  at_war_any   = at_war_lookup_any,
-                                  at_war_fatal = at_war_lookup_fatal) {
+# [2026-10-12] Vectorized churn with an optional belligerent-dyad drop set. Same four-case rule as the loop
+# reference below (both isolated -> 0; one side isolated -> 1; else 1 - weighted Jaccard), computed over the
+# partners that survive the drop. If dropping removes ALL of a state's positive ties in t-1 or in t, churn is
+# undefined (NA), exactly as in 02's peace-dyad churn. With drop = NULL it reproduces the loop version (the
+# equivalence is checked once at start-up, see "churn equivalence check").
+# Split in two so the rule-independent part (ties, transitions, pair weights) is built once per combo.
+prep_state_churn <- function(data, manhattan_vec) {
+  data$w_alt <- manhattan_vec
+  ties <- data |>
+    select(ccode1, ccode2, year, w_alt) |>
+    filter(w_alt > 0) |>
+    bind_rows(data |> filter(w_alt > 0) |> select(ccode1 = ccode2, ccode2 = ccode1, year, w_alt)) |>
+    group_by(ccode1, ccode2, year) |>
+    summarise(w = max(w_alt, na.rm = TRUE), .groups = "drop")
+  universe <- bind_rows(data |> select(ccode = ccode1, year), data |> select(ccode = ccode2, year)) |>
+    distinct(ccode, year)
+  # transitions t-1 -> t: the state is in the system in both years
+  trans <- universe |> semi_join(universe |> mutate(year = year + 1L), by = c("ccode", "year"))
+  pairs <- full_join(ties |> transmute(i = ccode1, j = ccode2, year = year + 1L, w1 = w),
+                     ties |> transmute(i = ccode1, j = ccode2, year, w2 = w),
+                     by = c("i", "j", "year")) |>
+    mutate(w1 = tidyr::replace_na(w1, 0), w2 = tidyr::replace_na(w2, 0))
+  list(trans = trans, pairs = pairs)
+}
+churn_from_prep <- function(prep, drop = NULL) {
+  trans <- prep$trans
+  pairs <- prep$pairs
+  if (is.null(drop)) {
+    pairs$drop_ <- FALSE
+  } else {
+    pairs <- pairs |>
+      mutate(a = pmin(i, j), b = pmax(i, j)) |>
+      left_join(drop, by = c("a", "b", "year")) |>
+      mutate(drop_ = tidyr::replace_na(drop_, FALSE)) |>
+      select(-a, -b)
+  }
+  agg <- pairs |>
+    group_by(ccode = i, year) |>
+    summarise(nf1 = sum(w1 > 0), nf2 = sum(w2 > 0),
+              n1 = sum(w1 > 0 & !drop_), n2 = sum(w2 > 0 & !drop_),
+              pc_min = sum(pmin(w1, w2)[!drop_]), pc_max = sum(pmax(w1, w2)[!drop_]),
+              .groups = "drop")
+  trans |>
+    left_join(agg, by = c("ccode", "year")) |>
+    mutate(across(c(nf1, nf2, n1, n2), ~ tidyr::replace_na(.x, 0L)),
+           across(c(pc_min, pc_max), ~ tidyr::replace_na(.x, 0)),
+           churn_alt = dplyr::case_when((n2 == 0 & nf2 > 0) | (n1 == 0 & nf1 > 0) ~ NA_real_,
+                                        n1 == 0 & n2 == 0 ~ 0,
+                                        n1 == 0 | n2 == 0 ~ 1,
+                                        pc_max > 0 ~ 1 - pc_min / pc_max,
+                                        TRUE ~ NA_real_),
+           log_churn_alt = log1p(churn_alt)) |>
+    arrange(ccode, year) |>
+    select(ccode, year, churn_alt, log_churn_alt)
+}
+compute_state_churn <- function(data, manhattan_vec, drop = NULL) {
+  churn_from_prep(prep_state_churn(data, manhattan_vec), drop = drop)
+}
+
+# Reference implementation (the pre-2026-10-12 loop). Used ONLY by the start-up equivalence check.
+compute_state_churn_loop <- function(data, manhattan_vec) {
   data$w_alt <- manhattan_vec
 
   # Build undirected ties
@@ -488,53 +604,49 @@ compute_state_churn <- function(data, manhattan_vec,
     group_by(ccode1, ccode2, year) |>
     summarise(w = max(w_alt, na.rm = TRUE), .groups = "drop")
 
-  # --- Combo-specific weighted PWF (any-MID and fatal-MID) ---
-  # PWF at year y = weighted fraction of year (y-1)'s partners that are
-  # at war at year y. Computed using THIS combo's edge weights so the
-  # control is internally consistent with the cell's churn outcome.
-  pwf_any <- ties |>
-    mutate(year_next = year + 1L) |>
-    left_join(at_war_any,
-              by = c("ccode2" = "ccode", "year_next" = "year")) |>
-    mutate(at_war = replace_na(at_war, 0L)) |>
-    group_by(ccode1, year_next) |>
-    summarise(pwf_weighted_combo = sum(at_war * w) / sum(w),
-              .groups = "drop") |>
-    rename(ccode = ccode1, year = year_next)
-
-  pwf_fatal <- ties |>
-    mutate(year_next = year + 1L) |>
-    left_join(at_war_fatal,
-              by = c("ccode2" = "ccode", "year_next" = "year")) |>
-    mutate(at_war_fatal = replace_na(at_war_fatal, 0L)) |>
-    group_by(ccode1, year_next) |>
-    summarise(pwf_fatal_weighted_combo = sum(at_war_fatal * w) / sum(w),
-              .groups = "drop") |>
-    rename(ccode = ccode1, year = year_next)
-
   # --- Churn per (state, year) ---
-  states <- unique(ties$ccode1)
+  # [2026-10-12] Full state-year universe (every state-year present in the dyad data, i.e. COW system
+  # membership), with the canonical four-case rule from 01_data_cleaning/02_compute_network_measures.R:
+  # both isolated -> churn 0; exactly one side isolated (total gain / total loss) -> churn 1;
+  # otherwise 1 - weighted Jaccard. Previously only consecutive years with positive ties were kept,
+  # so isolation transitions were silently dropped.
+  universe <- bind_rows(data |> select(ccode = ccode1, year), data |> select(ccode = ccode2, year)) |>
+    distinct(ccode, year) |>
+    left_join(ties |> group_by(ccode = ccode1, year) |> summarise(degree = n_distinct(ccode2), .groups = "drop"),
+              by = c("ccode", "year")) |>
+    mutate(degree = tidyr::replace_na(degree, 0L)) |>
+    arrange(ccode, year)
+  stopifnot(!anyDuplicated(universe[c("ccode", "year")]))
+  states <- unique(universe$ccode)
   result_list <- list()
 
   for (st in states) {
+    st_univ <- universe |> filter(ccode == st)
+    if (nrow(st_univ) < 2) next
     st_ties <- ties |> filter(ccode1 == st)
-    st_years <- sort(unique(st_ties$year))
-    if (length(st_years) < 2) next
 
-    for (j in 2:length(st_years)) {
-      yr_t  <- st_years[j]
-      yr_t1 <- st_years[j - 1]
+    for (j in 2:nrow(st_univ)) {
+      yr_t  <- st_univ$year[j]
+      yr_t1 <- st_univ$year[j - 1]
       if (yr_t - yr_t1 != 1) next
+      deg_t  <- st_univ$degree[j]
+      deg_t1 <- st_univ$degree[j - 1]
 
-      w_t  <- st_ties |> filter(year == yr_t)  |> select(ccode2, w)
-      w_t1 <- st_ties |> filter(year == yr_t1) |> select(ccode2, w)
+      if (deg_t == 0 && deg_t1 == 0) {
+        churn <- 0
+      } else if (deg_t == 0 || deg_t1 == 0) {
+        churn <- 1
+      } else {
+        w_t  <- st_ties |> filter(year == yr_t)  |> select(ccode2, w)
+        w_t1 <- st_ties |> filter(year == yr_t1) |> select(ccode2, w)
 
-      # Churn (1 - weighted Jaccard)
-      w_both <- full_join(w_t, w_t1, by = "ccode2", suffix = c("_t", "_t1")) |>
-        mutate(w_t = replace_na(w_t, 0), w_t1 = replace_na(w_t1, 0))
-      sum_min <- sum(pmin(w_both$w_t, w_both$w_t1))
-      sum_max <- sum(pmax(w_both$w_t, w_both$w_t1))
-      churn <- if (sum_max > 0) 1 - sum_min / sum_max else NA_real_
+        # Churn (1 - weighted Jaccard)
+        w_both <- full_join(w_t, w_t1, by = "ccode2", suffix = c("_t", "_t1")) |>
+          mutate(w_t = replace_na(w_t, 0), w_t1 = replace_na(w_t1, 0))
+        sum_min <- sum(pmin(w_both$w_t, w_both$w_t1))
+        sum_max <- sum(pmax(w_both$w_t, w_both$w_t1))
+        churn <- if (sum_max > 0) 1 - sum_min / sum_max else NA_real_
+      }
 
       result_list[[length(result_list) + 1]] <- tibble(
         ccode = st, year = yr_t,
@@ -545,21 +657,14 @@ compute_state_churn <- function(data, manhattan_vec,
   }
   churn_df <- bind_rows(result_list)
 
-  # Merge in combo-specific PWF columns
-  churn_df |>
-    left_join(pwf_any,   by = c("ccode", "year")) |>
-    left_join(pwf_fatal, by = c("ccode", "year")) |>
-    mutate(pwf_weighted_combo       = replace_na(pwf_weighted_combo, 0),
-           pwf_fatal_weighted_combo = replace_na(pwf_fatal_weighted_combo, 0))
+  churn_df
 }
 
 # --------------------------------------------------------------------------- #
 # 3b. (REMOVED) Per-combo spillover helper
 # --------------------------------------------------------------------------- #
-# `compute_spillover_for_combo()` and `at_war_state_global` were removed when
-# the spillover analyses were pulled out of the multiverse. Spillover now
-# lives only in 21_spillover_nonfighters.R, which uses the canonical RDS
-# produced by 01_data_cleaning/03_compute_spillover_canonical.R.
+# `compute_spillover_for_combo()` and `at_war_state_global` were removed. [2026-10-13] The spillover CONTROL
+# is built by compute_state_spill() (per combo) and comm_spill_t1 (state-year attribute).
 
 # --------------------------------------------------------------------------- #
 # 4. Generate all specifications
@@ -595,31 +700,111 @@ all_combos <- Filter(function(combo) {
 }, all_combos_raw)
 
 transform_methods <- c("raw", "log1p", "zscore")
+# [2026-10-13] State grid: raw only (the header design). See cell_varies_by_transform for the system grid.
+STATE_TRANSFORMS <- c("raw")
+# [2026-10-13] The four weighted methods build ties from the precomputed *_weighted / *_dist_weighted columns,
+# which the layer transforms (log1p / zscore of the base layers) never modify, so a non-raw transform under a
+# weighted method reproduces the raw cell exactly. Only "unweighted" (row sums of the transformed base layers)
+# changes with the transform.
+cell_varies_by_transform <- function(tfm, method) tfm == "raw" || method == "unweighted"
+stopifnot(all(STATE_TRANSFORMS %in% transform_methods))
 
 # System IVs: counts only (no onset), raw + log
 system_war_vars <- c("mid_count", "log_mid_count",
                      "fatal_mid_count", "log_fatal_mid_count")
 
-# State IVs: onset + count, raw + log, AND partner-war-fraction variants.
+# State IVs: onset + count, raw + log.
 # FULL SWEEP retained for the baseline (no extra control). The GDP/strength
 # control dimension is what tripled the state grid, so it is restricted -- see
 # GDP_STRENGTH_IVS / GDP_STRENGTH_DVS below and the guard in the FE_full loop.
 state_war_vars <- c("mid_onset_count", "log_mid_onset_count",
                     "fatal_mid_onset_count", "log_fatal_mid_onset_count",
                     "mid_count", "log_mid_count",
-                    "fatal_mid_count", "log_fatal_mid_count",
-                    "partner_war_frac", "partner_war_frac_weighted",
-                    "partner_fatal_war_frac", "partner_fatal_war_frac_weighted")
+                    "fatal_mid_count", "log_fatal_mid_count")
 
 # GDP and strength controls run ONLY on the theoretically-motivated
-# operationalizations [2026-07-15]: logged MID onset/count (H2) and both
-# partner-war fractions (H3), on the logged churn DVs. Rationale: fatal-MID
+# operationalizations [2026-07-15]: logged MID onset/count (H2), on the
+# logged churn DVs. Rationale: fatal-MID
 # severity is a separate appendix section; raw counts are dominated by the
 # logged form. This keeps the main sweep comprehensive while making the
 # GDP/strength robustness cheap (it does not need every mechanical variant).
-GDP_STRENGTH_IVS <- c("log_mid_onset_count", "log_mid_count",
-                      "partner_war_frac", "partner_war_frac_weighted")
-GDP_STRENGTH_DVS <- c("log_churn_alt", "log_churn")
+# [2026-10-13] headline IV added (fatal onset); log MID count dropped. Extra controls are crossed with these only.
+GDP_STRENGTH_IVS <- c("log_fatal_mid_onset_count", "log_mid_onset_count")
+
+# ---- State-level IV-timing x FE-structure x clustering grid [2026-10-12] -------------------
+# Trim these vectors to shrink the grid (rows per (combo, weighting, IV, DV) cell =
+#   (1 + 1 + 3 rows for t, t1, joint_t/joint_t1/joint_sum) x length(FE) x length(CLUST)).
+STATE_TFE_ENABLED <- TRUE
+STATE_TFE_TIMINGS <- c("t", "t1", "joint")                       # joint = IV at t and t-1 in one model
+STATE_TFE_FE      <- c("state_year", "state_year_comm")          # comm = canonical Leiden community FE (leiden_comm from 02)
+STATE_TFE_CLUST   <- c("ccode_year", "year_only", "ccode_only", "ccode_year_comm")
+STATE_TFE_DVS     <- c("churn_alt", "log_churn_alt", "churn", "log_churn")
+stopifnot(all(STATE_TFE_TIMINGS %in% c("t", "t1", "joint")),
+          all(STATE_TFE_FE %in% c("state_year", "state_year_comm")))
+
+# ---- Belligerent-dyad rule dimension [2026-10-12] -------------------------------------------
+# Rule name = <event>_<severity>_<window>. A dyad (unordered pair) is dropped from the transition t-1 -> t
+# (from BOTH years' tie sets) if it had the event in the window:
+#   event    : onset   = cowmidonset == 1      ; ongoing = cowmidongoing == 1
+#   severity : any     = any MID               ; fatal   = cowmidfatal == 1
+#   window   : t1t     = year t-1 or year t    ; t1      = year t-1 only
+# "none" drops nothing (all dyads; the canonical DV). Main-text peace panels: state Table 3 and system
+# Table 1 panel B use "ongoing_fatal_t1"; the appendix any-MID peace panels use "ongoing_any_t1t".
+# Every rule multiplies the grid (and run time) by length(BELLIG_RULES); trim this vector to shrink it.
+BELLIG_RULES <- c("none",
+                  "onset_any_t1t",   "onset_any_t1",   "onset_fatal_t1t",   "onset_fatal_t1",
+                  "ongoing_any_t1t", "ongoing_any_t1", "ongoing_fatal_t1t", "ongoing_fatal_t1")
+stopifnot(BELLIG_RULES[1] == "none", !anyDuplicated(BELLIG_RULES),
+          all(grepl("^none$|^(onset|ongoing)_(any|fatal)_(t1t|t1)$", BELLIG_RULES)))
+
+# Drop set for one rule: tibble(a, b, year, drop_ = TRUE), a < b, `year` = the t of the t-1 -> t transition.
+build_bellig_drop <- function(dd, rule) {
+  if (rule == "none") return(NULL)
+  parts <- strsplit(rule, "_", fixed = TRUE)[[1]]
+  ev  <- if (parts[1] == "onset") dd$cowmidonset else dd$cowmidongoing
+  hit <- !is.na(ev) & ev == 1
+  if (parts[2] == "fatal") hit <- hit & !is.na(dd$cowmidfatal) & dd$cowmidfatal == 1
+  ev_pairs <- tibble::tibble(a = pmin(dd$ccode1[hit], dd$ccode2[hit]),
+                             b = pmax(dd$ccode1[hit], dd$ccode2[hit]),
+                             year = as.integer(dd$year[hit])) |>
+    dplyr::distinct()
+  out <- ev_pairs |> dplyr::mutate(year = year + 1L)              # event in t-1
+  if (parts[3] == "t1t") out <- dplyr::bind_rows(out, ev_pairs)   # ... or in t
+  out |> dplyr::distinct() |> dplyr::mutate(drop_ = TRUE)
+}
+
+# Checkpoint schema [2026-10-12]. Every checkpoint is stamped with this string; a checkpoint with a missing
+# or different stamp (e.g. written before the PWE removal or under another grid configuration) stops the
+# run instead of being silently mixed in. Change the string whenever the specification set changes.
+MV_SCHEMA_VERSION <- NULL   # set below, after EXTRA_CTRLS and the grid are final
+# [2026-10-13] md5 of every input this script reads, so a checkpoint built from different inputs is rejected.
+INPUT_FILES <- file.path(OUTPUT_DIR, c("dyad_year_network_layers.rds", "network_metadata.rds", "system_war_counts.rds",
+                                       "system_analysis_data.rds", "state_level_results.rds", "layer_specific_measures.rds"))
+INPUT_FILES <- INPUT_FILES[file.exists(INPUT_FILES)]
+INPUT_FINGERPRINT <- paste(basename(INPUT_FILES), unname(tools::md5sum(INPUT_FILES)), sep = "=", collapse = ",")
+mv_schema_string <- function() paste("2026-10-13 noPWE tfe+isolation+dedupcomm+dedupdeg+bellig+vecchurn+stateIVlag1univ+spill",
+                           paste(GDP_STRENGTH_IVS, collapse = ","), paste(GDP_STRENGTH_DVS, collapse = ","),
+                           paste(BELLIG_RULES, collapse = ","),
+                           paste(weighting_methods, collapse = ","), paste(transform_methods, collapse = ","),
+                           paste(STATE_TRANSFORMS, collapse = ","),
+                           paste(sort(sapply(all_combos, function(cb) paste(sort(cb), collapse = "+"))), collapse = ";"),
+                           INPUT_FINGERPRINT,
+                           paste0("peacesciencer=", as.character(utils::packageVersion("peacesciencer"))),
+                           length(all_combos), paste(EXTRA_CTRLS, collapse = ","),
+                           STATE_TFE_ENABLED, paste(STATE_TFE_TIMINGS, collapse = ","),
+                           paste(STATE_TFE_FE, collapse = ","), paste(STATE_TFE_CLUST, collapse = ","),
+                           paste(STATE_TFE_DVS, collapse = ","), sep = " | ")
+read_ckpt <- function(path) {
+  x <- readRDS(path)
+  stopifnot(!is.null(MV_SCHEMA_VERSION))
+  if (!identical(attr(x, "mv_schema"), MV_SCHEMA_VERSION))
+    stop("checkpoint ", basename(path), " has schema '", format(attr(x, "mv_schema")), "', expected '",
+         MV_SCHEMA_VERSION, "'. Rerun with ROBUSTNESS_RESET=1.")
+  x
+}
+
+# [2026-10-13] raw churn added (the main-text DV is raw churn).
+GDP_STRENGTH_DVS <- c("churn_alt", "churn", "log_churn_alt", "log_churn")
 
 # System DVs: 5 raw + 5 log1p variants. The harmonized 01 main spec uses
 # log_kl_divergence; 03 scans both forms so the spec curve shows the
@@ -640,8 +825,8 @@ granger_dvs <- c(
 )
 
 # State DVs: 4 = {churn_alt, log_churn_alt, churn, log_churn}. FULL SET retained
-# for the baseline sweep. The GDP/strength specs use only the logged pair
-# (GDP_STRENGTH_DVS) via the guard in the FE_full loop.
+# for the baseline sweep. [2026-10-13] The extra-control specs (GDP, strength, spillover, community spillover)
+# also use all four (GDP_STRENGTH_DVS), restricted to GDP_STRENGTH_IVS via the guard in the FE_full loop.
 #   churn_alt / log_churn_alt: per-combo recomputed (varies with layer+weighting).
 #   churn / log_churn: canonical from 02 (constant across layer combos).
 state_dvs <- c("churn_alt", "log_churn_alt", "churn", "log_churn")
@@ -654,18 +839,13 @@ clustering_schemes <- list(
   "year_only"  = ~year,
   "ccode_only" = ~ccode
 )
+# [2026-10-12] clustering for the timing x FE grid: the three above plus three-way with community.
+tfe_clustering <- c(clustering_schemes, list(ccode_year_comm = ~ccode + year + leiden_comm))
+stopifnot(all(STATE_TFE_CLUST %in% names(tfe_clustering)))
 
-# Harmonization: main spec uses the UNWEIGHTED partner war fraction,
-# routed by IV severity — mid-count IVs use partner_war_frac (any MID),
-# fatal-MID IVs use partner_fatal_war_frac (only fatal MIDs). The
-# tie-strength-weighted versions are kept as alternative specs (looped
-# over for the robustness multiverse). Both severities × both weighting
-# variants are stored on every row of state_data.
-#
-# get_control_sets(war_var) returns a 2-element list keyed by
-# `unweighted` (main, anchors headline) and `weighted` (alt, appendix).
-# Each entry uses the partner-war variable that mirrors the IV's
-# severity level.
+# Control set [2026-10-12]: partner war exposure is no longer a control anywhere.
+# get_control_sets() returns one entry, keyed "none" (the `exposure` label that is
+# written to the output). `war_var` is kept as an argument so callers are unchanged.
 #
 # is_isolated_t1: predetermined indicator for "state had no partners at
 # t-1". Absorbs the level shift from `total_gain` and `both_isolated`
@@ -673,25 +853,8 @@ clustering_schemes <- list(
 # refactor in 02_compute_network_measures.R, so the within-state IV
 # coefficient is identified primarily from `normal` and `total_loss` rows.
 get_control_sets <- function(war_var) {
-  base       <- "+ democracy + autocracy + cinc + major_power + is_isolated_t1"
   base_clean <- "democracy + autocracy + cinc + major_power + is_isolated_t1"
-  # When PWF is itself the IV, drop the PWF control (perfectly collinear).
-  pwf_ivs <- c("partner_war_frac", "partner_war_frac_weighted",
-               "partner_fatal_war_frac", "partner_fatal_war_frac_weighted")
-  if (war_var %in% pwf_ivs) {
-    return(list(self = base_clean))
-  }
-  if (grepl("fatal", war_var)) {
-    list(
-      unweighted = paste0("partner_fatal_war_frac ", base),
-      weighted   = paste0("partner_fatal_war_frac_weighted ", base)
-    )
-  } else {
-    list(
-      unweighted = paste0("partner_war_frac ", base),
-      weighted   = paste0("partner_war_frac_weighted ", base)
-    )
-  }
+  list(none = base_clean)
 }
 # Static reference for any code that still expects a top-level binding;
 # the IV-routed version above is the source of truth.
@@ -708,30 +871,33 @@ control_sets <- get_control_sets("mid_count")
 # whether the POINT ESTIMATE survives them; running them across the no-FE and
 # bivariate classes would triple the grid to no purpose.
 #
-# `strength` DROPS is_isolated_t1. log1p(strength_t1) already encodes isolation
-# (strength = 0 -> log = 0), so the two are collinear by construction. This
-# mirrors what 25 did.
+# [2026-10-12] `strength` ADDS log_strength_t1 and KEEPS is_isolated_t1. They are not collinear (strength
+# varies among non-isolates, where the dummy is 0), so dropping the dummy changed two controls at once.
+# 25 was changed the same way.
 #
 # log_strength_t1 is COMBO-SPECIFIC -- it is the sum of THIS cell's edge
 # weights at t-1, so it is recomputed inside the combo loop, not merged in
 # from a canonical panel. log_gdp is a state-year attribute and is merged once.
 # --------------------------------------------------------------------------- #
-EXTRA_CTRLS <- c("none", "gdp", "strength")
+EXTRA_CTRLS <- c("none", "gdp", "strength", "spillover", "comm_spill")
 
 augment_controls <- function(rhs, extra) {
   if (extra == "none")     return(rhs)
   if (extra == "gdp")      return(paste0(rhs, " + log_gdp"))
-  if (extra == "strength") {
-    rhs2 <- gsub("\\s*\\+\\s*is_isolated_t1", "", rhs)   # collinear -- drop
-    return(paste0(rhs2, " + log_strength_t1"))
-  }
+  if (extra == "strength") return(paste0(rhs, " + log_strength_t1"))   # isolation dummy kept [2026-10-12]
+  if (extra == "spillover")  return(paste0(rhs, " + spill_exp_t1"))     # [2026-10-13] isolation dummy kept
+  if (extra == "comm_spill") return(paste0(rhs, " + comm_spill_t1"))    # [2026-10-13]
   stop("unknown extra control: ", extra)
 }
 
 # Combo-specific network strength at t-1 (mirrors former 25's construction).
 compute_state_strength <- function(data, manhattan_vec) {
-  d <- tibble::tibble(ccode1 = data$ccode1, ccode2 = data$ccode2,
-                      year = data$year, w = manhattan_vec)
+  # [2026-10-12] dyad_data stores (i,j) and (j,i); collapse to one row per unordered pair (max weight)
+  # before summing, otherwise every state's strength is doubled.
+  d <- tibble::tibble(ccode1 = pmin(data$ccode1, data$ccode2), ccode2 = pmax(data$ccode1, data$ccode2),
+                      year = data$year, w = manhattan_vec) |>
+    dplyr::group_by(ccode1, ccode2, year) |>
+    dplyr::summarise(w = max(w, na.rm = TRUE), .groups = "drop")
   dplyr::bind_rows(
     d |> dplyr::select(ccode = ccode1, year, w),
     d |> dplyr::select(ccode = ccode2, year, w)
@@ -741,6 +907,34 @@ compute_state_strength <- function(data, manhattan_vec) {
     dplyr::mutate(year_next = year + 1L) |>
     dplyr::select(ccode, year = year_next, strength_t1 = strength) |>
     dplyr::mutate(log_strength_t1 = log1p(strength_t1))
+}
+
+# [2026-10-13] Combo-specific third-party war exposure ("spillover").
+# For churn year t: weights are THIS cell's ties at t-2 (one value per unordered pair, max over the two
+# directed rows, as in compute_state_strength); a partner counts if it is in an ongoing fatal MID in t-1
+# and shares no dispute with the state in t-1. exposure = sum(w * x) / sum(w); 0 when the state had no
+# positive tie at t-2 (is_isolated_t1 stays in the model). Needs fatal_status and same_dispute (built below).
+# [2026-10-13, 5e] Partners = dyads with an ACTUAL tie in this cell's layers (any base layer > 0). The four weighted
+# methods give almost every dyad a positive weight (the *_weighted columns are residualised and range01 shifts
+# them), so without this restriction "exposure" became a distance/contiguity-weighted share of the whole system
+# at war rather than partner exposure (in the headline cell under contig/dist Manhattan it absorbed the IV:
+# 1.91 -> -0.12). With the restriction every weighting gives IV ~1.96-1.98 and a null exposure coefficient.
+compute_state_spill <- function(data, manhattan_vec, layers) {
+  tie_ <- rowSums(as.matrix(data[, layers, drop = FALSE]) > 0, na.rm = TRUE) > 0
+  d <- tibble::tibble(a = pmin(data$ccode1, data$ccode2), b = pmax(data$ccode1, data$ccode2),
+                      year = data$year, w = manhattan_vec * tie_) |>
+    dplyr::group_by(a, b, year) |>
+    dplyr::summarise(w = max(w, na.rm = TRUE), .groups = "drop") |>
+    dplyr::filter(w > 0)
+  dplyr::bind_rows(d |> dplyr::select(i = a, j = b, year, w),
+                   d |> dplyr::select(i = b, j = a, year, w)) |>
+    dplyr::mutate(year = year + 1L) |>                                  # ties at y-1 -> IV year y
+    dplyr::left_join(fatal_status |> dplyr::select(j = ccode, year, j_fatal), by = c("j", "year")) |>
+    dplyr::left_join(same_dispute, by = c("i", "j", "year")) |>
+    dplyr::mutate(x = tidyr::replace_na(j_fatal, 0L) * (1L - tidyr::replace_na(same, 0L))) |>
+    dplyr::group_by(ccode = i, year) |>
+    dplyr::summarise(spill_exp_t1 = sum(w * x) / sum(w), .groups = "drop") |>
+    dplyr::mutate(year = year + 1L)                                       # IV year y -> churn year t = y + 1
 }
 
 # --- log GDP (state-year; merged once) ------------------------------------- #
@@ -758,9 +952,9 @@ gdp_panel <- tryCatch({
     dplyr::mutate(log_gdp = log1p(pwtrgdp)) |>
     dplyr::select(ccode, year, log_gdp)
 }, error = function(e) {
-  cat("  WARNING: GDP merge failed (", conditionMessage(e), ")\n")
-  cat("  -> `gdp` specs will be skipped.\n")
-  NULL
+  # [2026-10-13] fail loudly: silently dropping the "gdp" level changes the grid and the checkpoint schema.
+  stop("GDP merge via peacesciencer::add_sim_gdp_pop() failed (", conditionMessage(e),
+       "). Fix the peacesciencer data download, or remove \"gdp\" from EXTRA_CTRLS deliberately.")
 })
 if (!is.null(gdp_panel)) {
   state_data <- state_data |> dplyr::left_join(gdp_panel, by = c("ccode", "year"))
@@ -788,6 +982,13 @@ if (!"log_mid_count" %in% names(system_war)) {
       log_fatal_mid_count = log1p(fatal_mid_count)
     )
 }
+# [2026-10-12] System conflict at t-1 by CALENDAR year (joined at year + 1), so a dropped or uncovered year
+# never shifts the lag onto an earlier year, and a combo's first covered year still gets its t-1 conflict.
+stopifnot(!anyDuplicated(system_war$year), all(diff(sort(system_war$year)) == 1))
+system_war_lag1 <- system_war |>
+  dplyr::transmute(year = year + 1L,
+                   mid_count_lag1 = mid_count, log_mid_count_lag1 = log_mid_count,
+                   fatal_mid_count_lag1 = fatal_mid_count, log_fatal_mid_count_lag1 = log_fatal_mid_count)
 
 # Ensure log war vars exist in state_data
 if (!"log_mid_onset_count" %in% names(state_data)) {
@@ -810,9 +1011,158 @@ if (!"log_churn" %in% names(state_data)) {
     mutate(log_churn = log1p(churn))
 }
 
+# Lagged (t-1) copy of every state IV. [2026-10-12] Taken from the full COW state-year universe in dyad_data
+# (same construction as 01_data_cleaning/02_compute_network_measures.R), not from the previous panel row:
+# state_data holds transition rows only, so a state's first transition year has no previous row although
+# the state was in the system (and its conflict is observed) in t-1. The lag is NA only when the state was
+# not in the system in t-1 (after a membership gap). Matches 02's log_fatal_onset_lag1.
+stopifnot("leiden_comm" %in% names(state_data), !anyNA(state_data$leiden_comm),
+          !anyDuplicated(state_data[, c("ccode", "year")]), all(state_war_vars %in% names(state_data)))
+mid_univ <- dplyr::bind_rows(dyad_data |> dplyr::distinct(ccode = ccode1, year),
+                             dyad_data |> dplyr::distinct(ccode = ccode2, year)) |>
+  dplyr::distinct() |>
+  dplyr::left_join(
+    dyad_data |>
+      dplyr::filter(cowmidongoing == 1, ccode1 < ccode2) |>
+      dplyr::select(ccode1, ccode2, year, cowmidfatal, cowmidonset) |>
+      tidyr::pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+      dplyr::group_by(ccode, year) |>
+      dplyr::summarise(mid_count = dplyr::n(),
+                       fatal_mid_count = sum(cowmidfatal == 1, na.rm = TRUE),
+                       mid_onset_count = sum(cowmidonset == 1, na.rm = TRUE),
+                       fatal_mid_onset_count = sum(cowmidfatal == 1 & cowmidonset == 1, na.rm = TRUE),
+                       .groups = "drop"),
+    by = c("ccode", "year")) |>
+  dplyr::mutate(dplyr::across(c(mid_count, fatal_mid_count, mid_onset_count, fatal_mid_onset_count),
+                              ~ as.numeric(tidyr::replace_na(.x, 0L))),
+                log_mid_count = log1p(mid_count), log_fatal_mid_count = log1p(fatal_mid_count),
+                log_mid_onset_count = log1p(mid_onset_count), log_fatal_mid_onset_count = log1p(fatal_mid_onset_count))
+stopifnot(all(state_war_vars %in% names(mid_univ)))
+# the universe reproduces the panel's own year-t counts
+chk_ <- dplyr::inner_join(state_data |> dplyr::select(ccode, year, dplyr::all_of(state_war_vars)),
+                          mid_univ, by = c("ccode", "year"), suffix = c("", ".u"))
+stopifnot(nrow(chk_) == nrow(state_data),
+          all(sapply(state_war_vars, function(v) isTRUE(all.equal(as.numeric(chk_[[v]]), chk_[[paste0(v, ".u")]])))))
+rm(chk_)
+state_data <- state_data |>
+  dplyr::left_join(mid_univ |>
+                     dplyr::transmute(ccode, year = year + 1L, dplyr::across(dplyr::all_of(state_war_vars), ~ .x,
+                                                                             .names = "{.col}__lag1")),
+                   by = c("ccode", "year"))
+stopifnot(all(paste0(state_war_vars, "__lag1") %in% names(state_data)), !anyDuplicated(state_data[, c("ccode", "year")]))
+cat(sprintf("  t-1 IVs: %d of %d state-years defined (NA = not in the system in t-1)\n",
+            sum(!is.na(state_data$log_fatal_mid_onset_count__lag1)), nrow(state_data)))
+
+# ---- [2026-10-13] inputs for the spillover controls ------------------------------------------------------
+# Partner status: in an ongoing fatal MID in year y (full COW universe, same source as the t-1 IVs).
+fatal_status <- mid_univ |> dplyr::transmute(ccode, year, j_fatal = as.integer(fatal_mid_count > 0))
+stopifnot(!anyDuplicated(fatal_status[c("ccode", "year")]))
+# Same-dispute pairs in year y (ordered both ways): any two states in the same ongoing MID, either side
+# (COW MID dispute-year data shipped with peacesciencer), plus every dyad_data MID opponent pair in case the
+# dispute file and dyad_data disagree.
+dd_ <- peacesciencer::cow_mid_dirdisps |> dplyr::filter(dispongoing == 1) |>
+  dplyr::distinct(dispnum, year, ccode1, ccode2)
+part_ <- dplyr::bind_rows(dd_ |> dplyr::select(dispnum, year, s = ccode1),
+                          dd_ |> dplyr::select(dispnum, year, s = ccode2)) |> dplyr::distinct()
+same_dispute <- dplyr::inner_join(part_, part_, by = c("dispnum", "year"), relationship = "many-to-many") |>
+  dplyr::filter(s.x != s.y) |>
+  dplyr::distinct(i = s.x, j = s.y, year)
+opp_ <- dyad_data |> dplyr::filter(cowmidongoing == 1) |> dplyr::distinct(i = ccode1, j = ccode2, year)
+n_opp_missing <- nrow(dplyr::anti_join(opp_, same_dispute, by = c("i", "j", "year")))
+cat(sprintf("  same-dispute pairs: %d directed pair-years; %d dyad_data MID opponent pair-years not in the dispute file (added)\n",
+            nrow(same_dispute), n_opp_missing))
+same_dispute <- dplyr::bind_rows(same_dispute, opp_) |> dplyr::distinct() |> dplyr::mutate(same = 1L)
+stopifnot(nrow(dplyr::anti_join(opp_, same_dispute, by = c("i", "j", "year"))) == 0,
+          all(same_dispute$i != same_dispute$j))
+rm(dd_, part_, opp_)
+
+# Community spillover (state-year attribute; canonical leiden_comm, merged once): share of the OTHER members
+# of the state's community in t-1 that are in an ongoing fatal MID in t-1 and share no dispute with it.
+# 0 if the state has no community row in t-1 (first transition year, re-entry, 1817) or no other members.
+comm_y_ <- state_data |> dplyr::select(ccode, year, leiden_comm) |>
+  dplyr::left_join(fatal_status, by = c("ccode", "year")) |>
+  dplyr::mutate(j_fatal = tidyr::replace_na(j_fatal, 0L))
+stopifnot(!anyDuplicated(comm_y_[c("ccode", "year")]))
+comm_spill_df <- dplyr::inner_join(comm_y_ |> dplyr::select(i = ccode, year, leiden_comm),
+                                   comm_y_ |> dplyr::select(j = ccode, year, leiden_comm, j_fatal),
+                                   by = c("year", "leiden_comm"), relationship = "many-to-many") |>
+  dplyr::filter(i != j) |>
+  dplyr::left_join(same_dispute, by = c("i", "j", "year")) |>
+  dplyr::mutate(x = j_fatal * (1L - tidyr::replace_na(same, 0L))) |>
+  dplyr::group_by(ccode = i, year) |>
+  dplyr::summarise(comm_spill_t1 = mean(x), .groups = "drop") |>
+  dplyr::mutate(year = year + 1L)
+state_data <- state_data |> dplyr::left_join(comm_spill_df, by = c("ccode", "year")) |>
+  dplyr::mutate(comm_spill_t1 = tidyr::replace_na(comm_spill_t1, 0))
+stopifnot(!anyDuplicated(state_data[c("ccode", "year")]), all(dplyr::between(state_data$comm_spill_t1, 0, 1)))
+cat(sprintf("  comm_spill_t1: mean %.3f, share > 0 %.3f\n", mean(state_data$comm_spill_t1), mean(state_data$comm_spill_t1 > 0)))
+rm(comm_y_, comm_spill_df)
+rm(mid_univ)
+
 # =========================================================================== #
 # 5. SYSTEM-LEVEL ROBUSTNESS (Lagged OLS + VAR/Granger + LP)
 # =========================================================================== #
+
+# ---- [2026-10-12] Belligerent-rule inputs and start-up checks ------------------------------------------
+bellig_drop <- setNames(lapply(BELLIG_RULES, function(r) build_bellig_drop(dyad_data, r)), BELLIG_RULES)
+for (r in setdiff(BELLIG_RULES, "none")) {
+  stopifnot(nrow(bellig_drop[[r]]) > 0, all(bellig_drop[[r]]$a < bellig_drop[[r]]$b),
+            !anyDuplicated(bellig_drop[[r]][c("a", "b", "year")]))
+}
+# t-1 windows are subsets of the matching t-1-and-t windows; fatal subsets of any-MID
+for (ev in c("onset", "ongoing")) for (sv in c("any", "fatal")) {
+  r1 <- paste(ev, sv, "t1", sep = "_"); r2 <- paste(ev, sv, "t1t", sep = "_")
+  if (all(c(r1, r2) %in% BELLIG_RULES))
+    stopifnot(nrow(dplyr::anti_join(bellig_drop[[r1]], bellig_drop[[r2]], by = c("a", "b", "year"))) == 0)
+}
+cat("Belligerent-dyad rules (dropped pair-transitions):\n")
+print(tibble::tibble(rule = BELLIG_RULES,
+                     n_dropped = sapply(BELLIG_RULES, function(r) if (r == "none") 0L else nrow(bellig_drop[[r]]))))
+
+# Churn equivalence check: the vectorized compute_state_churn() must reproduce the loop reference.
+{
+  chk_vec  <- compute_manhattan_vec(dyad_data, MAIN_LAYERS, "unweighted")
+  chk_new  <- compute_state_churn(dyad_data, chk_vec)
+  chk_old  <- compute_state_churn_loop(dyad_data, chk_vec)
+  chk_join <- dplyr::full_join(chk_new, chk_old, by = c("ccode", "year"), suffix = c("_new", "_old"))
+  stopifnot(nrow(chk_new) == nrow(chk_old), nrow(chk_join) == nrow(chk_old),
+            isTRUE(all.equal(chk_join$churn_alt_new, chk_join$churn_alt_old, tolerance = 1e-10)))
+  cat(sprintf("Churn equivalence check passed (%d state-years, main layers, unweighted).\n", nrow(chk_new)))
+  rm(chk_vec, chk_new, chk_old, chk_join)
+}
+
+# Canonical churn (02's main_weight network) under each rule. "none" keeps 02's churn from state_data
+# (the recomputation is only used to check that it matches).
+stopifnot("main_weight" %in% names(dyad_data))
+canon_prep <- prep_state_churn(dyad_data, dyad_data$main_weight)
+canon_churn_rule <- setNames(lapply(BELLIG_RULES, function(r) {
+  churn_from_prep(canon_prep, drop = bellig_drop[[r]]) |>
+    dplyr::transmute(ccode, year, churn = churn_alt, log_churn = log_churn_alt)
+}), BELLIG_RULES)
+rm(canon_prep)
+{
+  cc <- dplyr::inner_join(canon_churn_rule[["none"]], state_data |> dplyr::select(ccode, year, churn_02 = churn),
+                          by = c("ccode", "year"))
+  n_mis <- sum(abs(cc$churn - cc$churn_02) > 1e-9, na.rm = TRUE) + sum(xor(is.na(cc$churn), is.na(cc$churn_02)))
+  cat(sprintf("Canonical churn recomputed from main_weight: %d of %d state-years differ from 02's churn.\n",
+              n_mis, nrow(cc)))
+  if (n_mis > 0) warning("recomputed canonical churn differs from 02's churn in ", n_mis,
+                         " state-years; the rule-specific canonical DVs inherit that difference")
+  rm(cc, n_mis)
+}
+if ("ongoing_fatal_t1" %in% BELLIG_RULES && "churn_peace_ft1" %in% names(state_data)) {
+  cc <- dplyr::inner_join(canon_churn_rule[["ongoing_fatal_t1"]],
+                          state_data |> dplyr::select(ccode, year, churn_peace_ft1), by = c("ccode", "year"))
+  cat(sprintf("Rule ongoing_fatal_t1 vs 02's churn_peace_ft1: max abs diff %.2e over %d state-years.\n",
+              max(abs(cc$churn - cc$churn_peace_ft1), na.rm = TRUE), sum(!is.na(cc$churn) & !is.na(cc$churn_peace_ft1))))
+  # [2026-10-12] hard check: same values AND the same undefined state-years as 02's headline peace panel
+  stopifnot(max(abs(cc$churn - cc$churn_peace_ft1), na.rm = TRUE) < 1e-9,
+            identical(is.na(cc$churn), is.na(cc$churn_peace_ft1)))
+  rm(cc)
+}
+
+MV_SCHEMA_VERSION <- mv_schema_string()   # EXTRA_CTRLS, combos, weightings, transforms are final here
+cat("Checkpoint schema:", MV_SCHEMA_VERSION, "\n")
 
 cat("\n=== SYSTEM-LEVEL ROBUSTNESS ===\n")
 
@@ -839,7 +1189,7 @@ for (tfm in transform_methods) {
   }
 
   for (method in weighting_methods) {
-    if (tfm == "zscore" && grepl("euclidean", method)) next
+    if (!cell_varies_by_transform(tfm, method)) next   # [2026-10-13] weighted x non-raw duplicates raw
 
     # Checkpoint: skip this batch if it's already been computed.
     # Memory hygiene — only read the row count, don't load the full tibble
@@ -848,7 +1198,7 @@ for (tfm in transform_methods) {
     ckpt_path <- file.path(CHECKPOINT_DIR,
                             sprintf("system__%s__%s.rds", tfm, method))
     if (file.exists(ckpt_path)) {
-      n_loaded <- nrow(readRDS(ckpt_path))
+      n_loaded <- nrow(read_ckpt(ckpt_path))
       cat(sprintf("  [%s/%s] LOADED CHECKPOINT (%d specs)\n",
                   tfm, method, n_loaded))
       spec_idx <- spec_idx + n_loaded
@@ -866,16 +1216,27 @@ for (tfm in transform_methods) {
       combo_name <- paste(gsub("layer_", "", layers_subset), collapse = "+")
 
       manhattan_vec <- compute_manhattan_vec(dyad_work, layers_subset, method)
-      dv_df <- compute_system_dvs(dyad_work, manhattan_vec)
+      # [2026-10-12] belligerent-dyad rule dimension: every system spec below runs once per rule.
+      rule_results <- lapply(BELLIG_RULES, function(bellig_rule) {
+      out_list <- list()
+      dv_df <- compute_system_dvs(dyad_work, manhattan_vec, drop = bellig_drop[[bellig_rule]])
 
       # Temporal subsetting
       yr_range <- get_valid_year_range(layers_subset)
 
+      # [2026-10-12] Keep the COMPLETE annual grid of the coverage window (no row filter on the DV), so every
+      # row-based DV lag/lead below (AR(1), LP) is a calendar lag/lead even when a belligerent rule leaves a
+      # transition undefined; models drop NA rows themselves. Conflict lags are joined by calendar year.
+      # The DV in the first covered year compares with a pre-coverage year (e.g. trade before 1870), so it is
+      # set to NA, as for churn_alt in the state loop.
       analysis_data <- dv_df |>
         left_join(system_war, by = "year") |>
+        left_join(system_war_lag1, by = "year") |>
         left_join(sys_controls, by = "year") |>
         filter(year >= yr_range[1], year <= yr_range[2]) |>
-        filter(!is.na(kl_divergence)) |>
+        arrange(year) |>
+        mutate(dplyr::across(c(kl_divergence, js_divergence, edge_turnover_pct, degree_kl, degree_wasserstein),
+                             ~ dplyr::if_else(year == yr_range[1], NA_real_, .x))) |>
         mutate(
           log_kl_divergence      = log1p(kl_divergence),
           log_js_divergence      = log1p(js_divergence),
@@ -883,9 +1244,10 @@ for (tfm in transform_methods) {
           log_degree_kl          = log1p(degree_kl),
           log_degree_wasserstein = log1p(degree_wasserstein)
         )
+      stopifnot(all(diff(analysis_data$year) == 1))
 
       # Skip combo if too few obs — return empty bound rows to future_map_dfr
-      if (nrow(analysis_data) < 20) return(dplyr::bind_rows(out_list))
+      if (sum(!is.na(analysis_data$kl_divergence)) < 20) return(dplyr::bind_rows(out_list))
 
       has_offensive <- "layer_offensive" %in% layers_subset
       has_defensive <- "layer_defensive" %in% layers_subset
@@ -899,15 +1261,7 @@ for (tfm in transform_methods) {
       # re-computed sequentially after the parallel system loop finishes —
       # the parallel workers can't propagate side-effects back to the parent.
 
-      # Create lagged IVs for OLS (t-1, matching main analysis)
-      analysis_data <- analysis_data |>
-        arrange(year) |>
-        mutate(
-          mid_count_lag1 = lag(mid_count),
-          log_mid_count_lag1 = lag(log_mid_count),
-          fatal_mid_count_lag1 = lag(fatal_mid_count),
-          log_fatal_mid_count_lag1 = lag(log_fatal_mid_count)
-        )
+      # Lagged IVs for OLS (t-1, matching main analysis) come from system_war_lag1 (calendar join above).
 
       ols_lag_vars <- c("mid_count_lag1", "log_mid_count_lag1",
                         "fatal_mid_count_lag1", "log_fatal_mid_count_lag1")
@@ -1127,10 +1481,13 @@ for (tfm in transform_methods) {
 
           m_var <- tryCatch({
             var_block <- analysis_data |>
-              select(all_of(c(war_var, dv,
+              select(all_of(c("year", war_var, dv,
                               "n_democracies", "n_autocracies", "n_states"))) |>
               na.omit()
             if (nrow(var_block) < 30) stop("too few obs for VAR")
+            # [2026-10-12] a VAR assumes annual spacing: skip the cell if dropping NA rows left an interior gap
+            if (any(diff(var_block$year) != 1)) stop("non-consecutive years in VAR block")
+            var_block <- var_block |> select(-year)
 
             var_endo <- var_block |>
               select(all_of(c(war_var, dv))) |>
@@ -1152,10 +1509,12 @@ for (tfm in transform_methods) {
             }, error = function(e) 2L)
 
             vf <- VAR(var_endo, p = opt_lag, type = "both", exogen = var_exog)
-            gc <- causality(vf, cause = war_var, boot.runs = 100)
+            # Asymptotic Granger F-test (no bootstrap: too slow across the multiverse). [2026-10-12] the old
+            # boot.runs = 100 argument had no effect without boot = TRUE and is dropped.
+            gc <- causality(vf, cause = war_var)
             list(f = as.numeric(gc$Granger$statistic),
                  p = as.numeric(gc$Granger$p.value),
-                 lag = opt_lag, vf = vf)
+                 lag = opt_lag, vf = vf, n = nrow(var_block))
           }, error = function(e) NULL)
 
           if (!is.null(m_var)) {
@@ -1164,7 +1523,7 @@ for (tfm in transform_methods) {
               weighting = method, transform = tfm, layers = combo_name,
               n_layers = length(layers_subset), model = "VAR_Granger",
               coef = m_var$f, se = NA_real_, pval = m_var$p,
-              n_obs = nrow(analysis_data),
+              n_obs = m_var$n,
               has_offensive = has_offensive, has_defensive = has_defensive,
               has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
               is_onset = FALSE, year_start = year_start, year_end = year_end
@@ -1172,7 +1531,7 @@ for (tfm in transform_methods) {
 
             # ── Reverse Granger: DV → war_var ──
             m_var_rev <- tryCatch({
-              gc_rev <- causality(m_var$vf, cause = dv, boot.runs = 100)
+              gc_rev <- causality(m_var$vf, cause = dv)
               list(f = as.numeric(gc_rev$Granger$statistic),
                    p = as.numeric(gc_rev$Granger$p.value))
             }, error = function(e) NULL)
@@ -1182,7 +1541,7 @@ for (tfm in transform_methods) {
                 weighting = method, transform = tfm, layers = combo_name,
                 n_layers = length(layers_subset), model = "VAR_Granger_reverse",
                 coef = m_var_rev$f, se = NA_real_, pval = m_var_rev$p,
-                n_obs = nrow(analysis_data),
+                n_obs = m_var$n,
                 has_offensive = has_offensive, has_defensive = has_defensive,
                 has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
                 is_onset = FALSE, year_start = year_start, year_end = year_end
@@ -1215,7 +1574,7 @@ for (tfm in transform_methods) {
                   model = paste0("VAR_FEVD_", hname),
                   coef = unname(fevd_shares[[hname]]),
                   se = NA_real_, pval = NA_real_,
-                  n_obs = nrow(analysis_data),
+                  n_obs = m_var$n,
                   has_offensive = has_offensive, has_defensive = has_defensive,
                   has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
                   is_onset = FALSE, year_start = year_start, year_end = year_end
@@ -1300,8 +1659,13 @@ for (tfm in transform_methods) {
         }
       }  # end war_var loop
 
-      result <- dplyr::bind_rows(out_list)
-      rm(out_list)
+      res_r <- dplyr::bind_rows(out_list)
+      if (nrow(res_r) > 0) res_r$bellig_rule <- bellig_rule
+      res_r
+      })  # end bellig_rule lapply (system)
+
+      result <- dplyr::bind_rows(rule_results)
+      rm(rule_results)
       gc(verbose = FALSE)
       result
     }, .options = furrr::furrr_options(seed = TRUE))  # end combo future_map
@@ -1309,6 +1673,7 @@ for (tfm in transform_methods) {
     # Persist this batch to disk and FREE from memory. Reloaded later in the
     # post-processing block so the parent process doesn't accumulate
     # 100k+ tibble rows during long runs.
+    attr(triple_dfs, "mv_schema") <- MV_SCHEMA_VERSION
     saveRDS(triple_dfs, ckpt_path)
     n_saved <- nrow(triple_dfs)
     rm(triple_dfs)
@@ -1331,7 +1696,7 @@ cat(sprintf("\n  System-level specs: %d\n", n_system_specs))
 # parallel workers can't write to the parent frame, we re-compute explicitly
 # here. Same logic as the inner-loop body, single combo.
 {
-  layers_main <- c("layer_defensive", "layer_igo")
+  layers_main <- MAIN_LAYERS   # [2026-10-12] headline network = offensive + defensive + IGO (was defensive + IGO)
   manhattan_main <- compute_manhattan_vec(dyad_data, layers_main, "unweighted")
   dv_df_main <- compute_system_dvs(dyad_data, manhattan_main)
   yr_main <- get_valid_year_range(layers_main)
@@ -1355,7 +1720,7 @@ cat(sprintf("\n  System-level specs: %d\n", n_system_specs))
 
 cat("\n=== STATE-LEVEL ROBUSTNESS ===\n")
 
-for (tfm in transform_methods) {
+for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
   # Apply layer transform (same as system level)
   if (tfm == "log1p") {
     continuous_layers <- intersect(c("layer_igo", "layer_trade"), all_layer_vars)
@@ -1374,13 +1739,13 @@ for (tfm in transform_methods) {
   }
 
   for (method in weighting_methods) {
-    if (tfm == "zscore" && grepl("euclidean", method)) next
+    if (!cell_varies_by_transform(tfm, method)) next   # [2026-10-13]
 
     # Checkpoint: skip this batch if already computed (count only, no load).
     ckpt_path_state <- file.path(CHECKPOINT_DIR,
                                    sprintf("state__%s__%s.rds", tfm, method))
     if (file.exists(ckpt_path_state)) {
-      n_loaded <- nrow(readRDS(ckpt_path_state))
+      n_loaded <- nrow(read_ckpt(ckpt_path_state))
       cat(sprintf("  [state %s/%s] LOADED CHECKPOINT (%d specs)\n",
                   tfm, method, n_loaded))
       spec_idx <- spec_idx + n_loaded
@@ -1398,10 +1763,18 @@ for (tfm in transform_methods) {
       combo_name <- paste(gsub("layer_", "", layers_subset), collapse = "+")
 
       manhattan_vec <- compute_manhattan_vec(dyad_work_state, layers_subset, method)
-      state_dvs_df <- compute_state_churn(dyad_work_state, manhattan_vec)
 
-      # Combo-specific network strength at t-1 (for the `strength` control set).
+      # Combo-specific network strength at t-1 (for the `strength` control set). Rule-independent.
       strength_df <- compute_state_strength(dyad_work_state, manhattan_vec)
+      # [2026-10-13] Combo-specific third-party war exposure (for the `spillover` control set). Rule-independent.
+      spill_df <- compute_state_spill(dyad_work_state, manhattan_vec, layers_subset)   # [5e] actual ties only
+
+      # [2026-10-12] belligerent-dyad rule dimension: churn_alt AND the canonical churn are recomputed under
+      # each rule, and every state spec below (including the timing_fe grid) runs once per rule.
+      churn_prep <- prep_state_churn(dyad_work_state, manhattan_vec)
+      rule_results <- lapply(BELLIG_RULES, function(bellig_rule) {
+      out_list <- list()
+      state_dvs_df <- churn_from_prep(churn_prep, drop = bellig_drop[[bellig_rule]])
 
     if (nrow(state_dvs_df) < 100) return(dplyr::bind_rows(out_list))
 
@@ -1410,15 +1783,8 @@ for (tfm in transform_methods) {
     # recomputed DV (churn_alt / log_churn_alt) and the canonical 02 DV
     # (churn / log_churn) on the same row.
     #
-    # IMPORTANT — combo-specific weighted PWF: state_dvs_df now carries
-    # `pwf_weighted_combo` and `pwf_fatal_weighted_combo` (computed with
-    # this cell's own edge weights). We OVERWRITE the canonical columns
-    # `partner_war_frac_weighted` and `partner_fatal_war_frac_weighted`
-    # with these combo-specific values so the existing regression
-    # formulas (which reference `partner_war_frac_weighted`) pick up
-    # the internally-consistent control. The unweighted variants
-    # (`partner_war_frac`, `partner_fatal_war_frac`) don't depend on
-    # network weights — they count partners — so they stay canonical.
+    # [2026-10-12] state_dvs_df now spans the full state-year universe (isolation transitions included),
+    # so canonical-DV rows are no longer lost when a combo leaves a state isolated.
     churn_merged <- state_dvs_df |>
       left_join(
         state_data |>
@@ -1428,29 +1794,34 @@ for (tfm in transform_methods) {
                  mid_onset_count, fatal_mid_onset_count,
                  log_mid_count, log_fatal_mid_count,
                  log_mid_onset_count, log_fatal_mid_onset_count,
-                 partner_war_frac, partner_war_frac_weighted,
-                 partner_fatal_war_frac, partner_fatal_war_frac_weighted,
                  is_isolated_t1,
                  democracy, autocracy,
                  cinc, major_power,
                  log_gdp,
-                 order_period) |>
+                 comm_spill_t1,
+                 order_period,
+                 leiden_comm,
+                 dplyr::all_of(paste0(state_war_vars, "__lag1"))) |>
           distinct(),
         by = c("ccode", "year")
       ) |>
       # Combo-specific network strength at t-1 (for the `strength` control set).
       left_join(strength_df, by = c("ccode", "year")) |>
+      left_join(spill_df, by = c("ccode", "year")) |>
       mutate(
         strength_t1     = tidyr::replace_na(strength_t1, 0),
-        log_strength_t1 = tidyr::replace_na(log_strength_t1, 0)
-      ) |>
-      # Overwrite canonical weighted PWF with combo-specific version.
-      mutate(
-        partner_war_frac_weighted       = pwf_weighted_combo,
-        partner_fatal_war_frac_weighted = pwf_fatal_weighted_combo
+        log_strength_t1 = tidyr::replace_na(log_strength_t1, 0),
+        spill_exp_t1    = tidyr::replace_na(spill_exp_t1, 0)   # [2026-10-13] no positive tie at t-2 -> 0
       )
+    # Canonical churn under the rule (main_weight network, same drop set); "none" keeps 02's churn.
+    if (bellig_rule != "none") {
+      churn_merged <- churn_merged |>
+        dplyr::select(-churn, -log_churn) |>
+        dplyr::left_join(canon_churn_rule[[bellig_rule]], by = c("ccode", "year"))
+    }
+    stopifnot(!anyDuplicated(churn_merged[c("ccode", "year")]))
 
-    # (Spillover variables removed from the multiverse — see top of file.)
+    # [2026-10-13] spill_exp_t1 (combo-specific) and comm_spill_t1 are merged above for the extra-control dimension.
 
     has_offensive <- "layer_offensive" %in% layers_subset
     has_defensive <- "layer_defensive" %in% layers_subset
@@ -1486,31 +1857,44 @@ for (tfm in transform_methods) {
     # layer set, so each spec is estimated only where all of its layers exist.
     # ------------------------------------------------------------------ #
     churn_combo <- churn_merged |>
-      filter(year >= year_start, year <= year_end)
+      filter(year >= year_start, year <= year_end) |>
+      # [2026-10-12] churn_alt in year_start compares year_start with year_start - 1, which lies outside the
+      # combo's coverage window (e.g. trade still all zeros); drop it. Canonical churn is unaffected.
+      mutate(churn_alt     = dplyr::if_else(year == year_start, NA_real_, churn_alt),
+             log_churn_alt = dplyr::if_else(year == year_start, NA_real_, log_churn_alt),
+             # [2026-10-13] spillover in year t uses this cell's ties at t-2; before year_start + 2 that weight
+             # year lies outside the layers' coverage (e.g. trade before 1870), so the measure is undefined (NA),
+             # which is distinct from an observed state with no ties (0).
+             spill_exp_t1  = dplyr::if_else(year < year_start + 2L, NA_real_, spill_exp_t1),
+             # [2026-10-13] strength in year t uses ties at t-1; at year_start those precede coverage.
+             strength_t1     = dplyr::if_else(year < year_start + 1L, NA_real_, strength_t1),
+             log_strength_t1 = dplyr::if_else(year < year_start + 1L, NA_real_, log_strength_t1))
 
     for (war_var in state_war_vars) {
+      # [2026-10-12] The main state sweep runs the IV at t-1 (headline timing, from the universe lag above);
+      # war_variable keeps the base name. IV-at-t results are in the timing_fe grid (iv_timing == "t").
+      iv_main <- paste0(war_var, "__lag1")
       is_onset <- grepl("onset", war_var)
 
       for (dv in state_dvs) {
         dv_col <- dv
 
         analysis_sub <- churn_combo |>
-          filter(!is.na(.data[[dv_col]]), !is.na(.data[[war_var]]))
+          filter(!is.na(.data[[dv_col]]), !is.na(.data[[iv_main]]))
 
         if (nrow(analysis_sub) < 100) next
 
-        # Loop over control sets — IV-routed: severity of partner-war
-        # control mirrors the IV (mid IVs use partner_war_frac;
-        # fatal IVs use partner_fatal_war_frac). Two weighting variants
-        # per IV: unweighted (main) and weighted (appendix robustness).
+        # Loop over control sets. After the 2026-10-12 PWE removal there is
+        # exactly one control set per IV (democracy, autocracy, cinc,
+        # major_power, is_isolated_t1), labelled exposure = "none".
         iv_control_sets <- get_control_sets(war_var)
         for (ctrl_name in names(iv_control_sets)) {
           controls_rhs <- iv_control_sets[[ctrl_name]]
-          exposure_label <- ctrl_name  # "unweighted" or "weighted"
+          exposure_label <- ctrl_name  # always "none" (PWE removed)
 
         # ── A. TWFE full × clustering schemes × EXTRA CONTROL SETS ──
-        # extra_ctrl in {none, gdp, strength}. Applied to FE_full ONLY --
-        # see the EXTRA_CTRLS note above. `strength` drops is_isolated_t1.
+        # extra_ctrl in {none, gdp, strength, spillover, comm_spill}. Applied to FE_full ONLY --
+        # see the EXTRA_CTRLS note above. `strength` adds log_strength_t1 (isolation dummy kept).
         for (extra_ctrl in EXTRA_CTRLS) {
 
           # GDP/strength run ONLY on the theory-motivated IV x DV subset
@@ -1520,6 +1904,21 @@ for (tfm in transform_methods) {
               (!war_var %in% GDP_STRENGTH_IVS || !dv %in% GDP_STRENGTH_DVS)) next
 
           rhs_x <- augment_controls(controls_rhs, extra_ctrl)
+          # [2026-10-13] record (do not silently drop) cells whose extra control is unusable in this cell
+          ctrl_col_ <- switch(extra_ctrl, none = NA_character_, gdp = "log_gdp", strength = "log_strength_t1",
+                              spillover = "spill_exp_t1", comm_spill = "comm_spill_t1")
+          if (!is.na(ctrl_col_) && (!ctrl_col_ %in% names(analysis_sub) ||
+                                    all(is.na(analysis_sub[[ctrl_col_]])) ||
+                                    isTRUE(sd(analysis_sub[[ctrl_col_]], na.rm = TRUE) == 0))) {
+            for (clust_name in names(clustering_schemes))
+              out_list[[length(out_list) + 1]] <- tibble(
+                level = "state", dv = dv, war_variable = war_var, weighting = method, transform = tfm,
+                layers = combo_name, n_layers = length(layers_subset), model = paste0("FE_full_", clust_name),
+                extra_control = extra_ctrl, exposure = exposure_label,
+                coef = NA_real_, se = NA_real_, pval = NA_real_, n_obs = NA_integer_,
+                fit_status = "skipped_degenerate_control")
+            next
+          }
 
           # Skip if the augmenting variable is absent or degenerate in this cell.
           if (extra_ctrl == "gdp" &&
@@ -1528,8 +1927,17 @@ for (tfm in transform_methods) {
           if (extra_ctrl == "strength" &&
               (!"log_strength_t1" %in% names(analysis_sub) ||
                sd(analysis_sub$log_strength_t1, na.rm = TRUE) == 0)) next
+          if (extra_ctrl == "spillover" &&
+              (!"spill_exp_t1" %in% names(analysis_sub) ||
+               isTRUE(sd(analysis_sub$spill_exp_t1, na.rm = TRUE) == 0))) next
+          if (extra_ctrl == "comm_spill" &&
+              (!"comm_spill_t1" %in% names(analysis_sub) ||
+               isTRUE(sd(analysis_sub$comm_spill_t1, na.rm = TRUE) == 0))) next
+          # [2026-10-13] the coefficient that must survive estimation for the row to count as this control
+          ctrl_term <- switch(extra_ctrl, none = NA_character_, gdp = "log_gdp", strength = "log_strength_t1",
+                              spillover = "spill_exp_t1", comm_spill = "comm_spill_t1")
 
-          fml_fe <- as.formula(paste(dv_col, "~", war_var, "+",
+          fml_fe <- as.formula(paste(dv_col, "~", iv_main, "+",
                                      rhs_x, "| ccode + year"))
 
           for (clust_name in names(clustering_schemes)) {
@@ -1538,11 +1946,29 @@ for (tfm in transform_methods) {
             m_fe <- tryCatch(
               feols(fml_fe, data = sub_data,
                     vcov = clustering_schemes[[clust_name]]),
-              error = function(e) NULL
+              error = function(e) e
             )
-            if (!is.null(m_fe)) {
+            # [2026-10-13] fit status: anything but "ok" is recorded (robustness_fit_coverage.csv) and kept
+            # out of the results, so a dropped IV or an FE-absorbed control is never labelled as estimated.
+            fit_status <- if (inherits(m_fe, "error")) {
+              paste("error:", conditionMessage(m_fe))
+            } else if (!iv_main %in% names(coef(m_fe))) {
+              "iv_dropped"
+            } else if (!is.na(ctrl_term) && !ctrl_term %in% names(coef(m_fe))) {
+              "control_absorbed"
+            } else "ok"
+            if (fit_status != "ok") {
+              out_list[[length(out_list) + 1]] <- tibble(
+                level = "state", dv = dv, war_variable = war_var,
+                weighting = method, transform = tfm, layers = combo_name,
+                n_layers = length(layers_subset),
+                model = paste0("FE_full_", clust_name),
+                extra_control = extra_ctrl, exposure = exposure_label,
+                coef = NA_real_, se = NA_real_, pval = NA_real_, n_obs = NA_integer_,
+                fit_status = fit_status)
+            } else {
               ct <- coeftable(m_fe)
-              if (war_var %in% rownames(ct)) {
+              if (iv_main %in% rownames(ct)) {
                 out_list[[length(out_list) + 1]] <- tibble(
                   level = "state", dv = dv, war_variable = war_var,
                   weighting = method, transform = tfm, layers = combo_name,
@@ -1550,9 +1976,10 @@ for (tfm in transform_methods) {
                   model = paste0("FE_full_", clust_name),
                   extra_control = extra_ctrl,
                   exposure = exposure_label,
-                  coef = ct[war_var, "Estimate"],
-                  se = ct[war_var, "Std. Error"],
-                  pval = ct[war_var, "Pr(>|t|)"],
+                  fit_status = "ok",
+                  coef = ct[iv_main, "Estimate"],
+                  se = ct[iv_main, "Std. Error"],
+                  pval = ct[iv_main, "Pr(>|t|)"],
                   n_obs = nobs(m_fe),
                   has_offensive = has_offensive, has_defensive = has_defensive,
                   has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
@@ -1564,8 +1991,100 @@ for (tfm in transform_methods) {
           }
         }  # end extra_ctrl loop
 
+        # ── A2. [2026-10-12] IV timing x FE structure x clustering grid (state level) ──
+        # Common estimation sample for every timing/FE/clustering cell: IV and its lag non-missing
+        # and a community label present, so contrasts isolate the specification, not the sample.
+        # Controls = the same set as the main TWFE spec (no GDP/strength). Rows are tagged
+        # grid = "timing_fe" and split out of specs_df downstream.
+        if (STATE_TFE_ENABLED && dv %in% STATE_TFE_DVS) {
+          lag_col  <- paste0(war_var, "__lag1")
+          tfe_data <- analysis_sub |>
+            dplyr::filter(!is.na(.data[[war_var]]), !is.na(.data[[lag_col]]), !is.na(leiden_comm))
+          tfe_data$iv_diff__ <- tfe_data[[lag_col]] - tfe_data[[war_var]]
+          # Hold the sample fixed across FE structures: iterate until neither the state+year nor the
+          # state+year+community joint model drops a singleton, so every fit below uses identical rows.
+          for (it in 1:10) {
+            n_before <- nrow(tfe_data)
+            if (n_before < 100) break
+            for (fe_rhs_s in c("ccode + year + leiden_comm", "ccode + year")) {
+              fit_samp <- tryCatch(feols(as.formula(paste(dv_col, "~", war_var, "+", lag_col, "+", controls_rhs, "|", fe_rhs_s)),
+                                         data = tfe_data, vcov = "iid"), error = function(e) NULL)
+              if (is.null(fit_samp)) {
+                warning(sprintf("timing_fe: sample-fixing fit (%s) failed for %s / %s / %s; cell skipped",
+                                fe_rhs_s, combo_name, war_var, dv))
+                tfe_data <- tfe_data[0, ]; break
+              }
+              tfe_data <- tfe_data[obs(fit_samp), ]
+            }
+            if (nrow(tfe_data) == n_before) break
+          }
+          if (nrow(tfe_data) >= 100) {
+            for (fe_struct in STATE_TFE_FE) {
+              fe_rhs <- if (fe_struct == "state_year") "ccode + year" else "ccode + year + leiden_comm"
+              # Fit once per (timing, FE) with iid vcov; clustering is applied afterwards via coeftable(vcov=).
+              fit_t  <- tryCatch(feols(as.formula(paste(dv_col, "~", war_var, "+", controls_rhs, "|", fe_rhs)),
+                                       data = tfe_data, vcov = "iid"), error = function(e) NULL)
+              fit_t1 <- tryCatch(feols(as.formula(paste(dv_col, "~", lag_col, "+", controls_rhs, "|", fe_rhs)),
+                                       data = tfe_data, vcov = "iid"), error = function(e) NULL)
+              fit_j  <- tryCatch(feols(as.formula(paste(dv_col, "~", war_var, "+", lag_col, "+", controls_rhs, "|", fe_rhs)),
+                                       data = tfe_data, vcov = "iid"), error = function(e) NULL)
+              # Sum of the t and t-1 coefficients with its own SE: y ~ iv_t + (iv_lag - iv_t); the coefficient
+              # on iv_t is b_t + b_t1.
+              fit_s  <- tryCatch(feols(as.formula(paste(dv_col, "~", war_var, "+ iv_diff__ +", controls_rhs, "|", fe_rhs)),
+                                       data = tfe_data, vcov = "iid"), error = function(e) NULL)
+              if (!is.null(fit_j) && !is.null(fit_s) && all(c(war_var, lag_col) %in% names(coef(fit_j))) &&
+                  war_var %in% names(coef(fit_s))) {
+                # Separate demeaning runs can differ at the fixef tolerance; drop the sum row instead of
+                # erroring inside the worker (which would lose the whole batch).
+                if (!isTRUE(all.equal(unname(coef(fit_s)[[war_var]]), unname(sum(coef(fit_j)[c(war_var, lag_col)])),
+                                      tolerance = 1e-5))) {
+                  warning(sprintf("timing_fe: joint_sum != b_t + b_t1 for %s / %s / %s (%s); joint_sum row dropped",
+                                  combo_name, war_var, dv, fe_struct))
+                  fit_s <- NULL
+                }
+              }
+              for (f_chk in list(fit_t, fit_t1, fit_j, fit_s)) {
+                if (!is.null(f_chk)) stopifnot(nobs(f_chk) == nrow(tfe_data))
+              }
+              spec_terms <- list()
+              if ("t" %in% STATE_TFE_TIMINGS)  spec_terms[[length(spec_terms) + 1]] <- list(timing = "t",  term = "t",  fit = fit_t,  var = war_var)
+              if ("t1" %in% STATE_TFE_TIMINGS) spec_terms[[length(spec_terms) + 1]] <- list(timing = "t1", term = "t1", fit = fit_t1, var = lag_col)
+              if ("joint" %in% STATE_TFE_TIMINGS) {
+                spec_terms[[length(spec_terms) + 1]] <- list(timing = "joint", term = "joint_t",   fit = fit_j, var = war_var)
+                spec_terms[[length(spec_terms) + 1]] <- list(timing = "joint", term = "joint_t1",  fit = fit_j, var = lag_col)
+                spec_terms[[length(spec_terms) + 1]] <- list(timing = "joint", term = "joint_sum", fit = fit_s, var = war_var)
+              }
+              for (st in spec_terms) {
+                if (is.null(st$fit)) next
+                for (clust_name in STATE_TFE_CLUST) {
+                  ct <- tryCatch(coeftable(st$fit, vcov = tfe_clustering[[clust_name]]), error = function(e) NULL)
+                  if (is.null(ct) || !st$var %in% rownames(ct)) next
+                  out_list[[length(out_list) + 1]] <- tibble(
+                    level = "state", dv = dv, war_variable = war_var,
+                    weighting = method, transform = tfm, layers = combo_name,
+                    n_layers = length(layers_subset),
+                    model = paste0(if (fe_struct == "state_year") "FE_full_" else "FE_commFE_", clust_name),
+                    extra_control = "none",
+                    exposure = exposure_label,
+                    grid = "timing_fe", iv_timing = st$timing, iv_term = st$term,
+                    fe_structure = fe_struct, clustering = clust_name,
+                    coef = ct[st$var, "Estimate"],
+                    se = ct[st$var, "Std. Error"],
+                    pval = ct[st$var, "Pr(>|t|)"],
+                    n_obs = nobs(st$fit),
+                    has_offensive = has_offensive, has_defensive = has_defensive,
+                    has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
+                    is_onset = is_onset,
+                    year_start = year_start, year_end = year_end
+                  )
+                }
+              }
+            }
+          }
+        }
+
         # ── C. Full model, no FE ──
-        fml_full_nofe <- as.formula(paste(dv_col, "~", war_var, "+",
+        fml_full_nofe <- as.formula(paste(dv_col, "~", iv_main, "+",
                                           controls_rhs))
 
         m_full_nofe <- tryCatch(
@@ -1574,16 +2093,16 @@ for (tfm in transform_methods) {
         )
         if (!is.null(m_full_nofe)) {
           sm <- summary(m_full_nofe)$coefficients
-          if (war_var %in% rownames(sm)) {
+          if (iv_main %in% rownames(sm)) {
             out_list[[length(out_list) + 1]] <- tibble(
               level = "state", dv = dv, war_variable = war_var,
               weighting = method, transform = tfm, layers = combo_name,
               n_layers = length(layers_subset), model = "full_noFE",
               exposure = exposure_label,
-              coef = sm[war_var, "Estimate"],
-              se = sm[war_var, "Std. Error"],
-              pval = sm[war_var, "Pr(>|t|)"],
-              n_obs = nrow(analysis_sub),
+              coef = sm[iv_main, "Estimate"],
+              se = sm[iv_main, "Std. Error"],
+              pval = sm[iv_main, "Pr(>|t|)"],
+              n_obs = nobs(m_full_nofe),   # [2026-10-13] lm drops rows with missing controls
               has_offensive = has_offensive, has_defensive = has_defensive,
               has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
               is_onset = is_onset,
@@ -1597,7 +2116,7 @@ for (tfm in transform_methods) {
         # year fixed effects. Coefficients and p-values pulled with the same
         # SE ladder (iid, HC3, NW) as the system-level OLS specs above so
         # they appear cleanly in the spec curve and meta-regression.
-        fml_full_nofe_y <- as.formula(paste(dv_col, "~", war_var, "+",
+        fml_full_nofe_y <- as.formula(paste(dv_col, "~", iv_main, "+",
                                               controls_rhs, "+ poly(year, 2)"))
 
         m_full_nofe_y <- tryCatch(
@@ -1606,26 +2125,31 @@ for (tfm in transform_methods) {
         )
         if (!is.null(m_full_nofe_y)) {
           sm_y <- summary(m_full_nofe_y)$coefficients
-          if (war_var %in% rownames(sm_y)) {
+          if (iv_main %in% rownames(sm_y)) {
             df_resid <- m_full_nofe_y$df.residual
             t_crit   <- qt(0.975, df = df_resid)
-            est_val  <- sm_y[war_var, "Estimate"]
-            se_iid   <- sm_y[war_var, "Std. Error"]
+            est_val  <- sm_y[iv_main, "Estimate"]
+            se_iid   <- sm_y[iv_main, "Std. Error"]
 
             hc3_vv <- tryCatch(sandwich::vcovHC(m_full_nofe_y, type = "HC3"),
                                 error = function(e) NULL)
-            hc3_se_val <- if (!is.null(hc3_vv)) sqrt(diag(hc3_vv))[war_var] else NA_real_
+            hc3_se_val <- if (!is.null(hc3_vv)) sqrt(diag(hc3_vv))[iv_main] else NA_real_
             hc3_p_val  <- if (!is.na(hc3_se_val)) {
               2 * pt(abs(est_val / hc3_se_val), df = df_resid, lower.tail = FALSE)
             } else NA_real_
             hc3_ci_lo  <- if (!is.na(hc3_se_val)) est_val - t_crit * hc3_se_val else NA_real_
             hc3_ci_hi  <- if (!is.na(hc3_se_val)) est_val + t_crit * hc3_se_val else NA_real_
 
-            nw_vv <- tryCatch(sandwich::NeweyWest(m_full_nofe_y, lag = 5,
-                                                    prewhite = FALSE,
-                                                    adjust = TRUE),
-                                error = function(e) NULL)
-            nw_se_val <- if (!is.null(nw_vv)) sqrt(diag(nw_vv))[war_var] else NA_real_
+            # [2026-10-13] panel Newey-West (lags within state only). sandwich::NeweyWest on the stacked lm
+            # treated adjacent rows of different states as adjacent years. Lags are positional within a state,
+            # so the 26 state-years after a membership gap are treated as following the pre-gap year.
+            nw_se_val <- tryCatch({
+              m_nw <- fixest::feols(fml_full_nofe_y, data = analysis_sub, panel.id = ~ccode + year,
+                                    vcov = fixest::NW(5))
+              stopifnot(nobs(m_nw) == nobs(m_full_nofe_y),
+                        isTRUE(all.equal(unname(coef(m_nw)[iv_main]), unname(est_val))))
+              unname(fixest::se(m_nw)[iv_main])
+            }, error = function(e) NA_real_)
             nw_p_val  <- if (!is.na(nw_se_val)) {
               2 * pt(abs(est_val / nw_se_val), df = df_resid, lower.tail = FALSE)
             } else NA_real_
@@ -1639,14 +2163,14 @@ for (tfm in transform_methods) {
               exposure = exposure_label,
               coef = est_val,
               se = se_iid,
-              pval = sm_y[war_var, "Pr(>|t|)"],
+              pval = sm_y[iv_main, "Pr(>|t|)"],
               ci_low_iid  = est_val - t_crit * se_iid,
               ci_high_iid = est_val + t_crit * se_iid,
               hc3_se = unname(hc3_se_val), hc3_pval = hc3_p_val,
               hc3_ci_low = unname(hc3_ci_lo), hc3_ci_high = unname(hc3_ci_hi),
               nw_se = unname(nw_se_val), nw_pval = nw_p_val,
               nw_ci_low = unname(nw_ci_lo), nw_ci_high = unname(nw_ci_hi),
-              n_obs = nrow(analysis_sub),
+              n_obs = nobs(m_full_nofe_y),   # [2026-10-13] lm drops rows with missing controls
               has_offensive = has_offensive, has_defensive = has_defensive,
               has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
               is_onset = is_onset,
@@ -1676,7 +2200,7 @@ for (tfm in transform_methods) {
         # Dropped rather than re-clustered: the year-FE specs already cover
         # the "does it survive time controls" question.
         if (FALSE) {
-        fml_state_period <- as.formula(paste(dv_col, "~", war_var, "+",
+        fml_state_period <- as.formula(paste(dv_col, "~", iv_main, "+",
                                                controls_rhs,
                                                "| ccode + order_period"))
         m_state_period <- tryCatch(
@@ -1686,16 +2210,16 @@ for (tfm in transform_methods) {
         )
         if (!is.null(m_state_period)) {
           ct_sp <- coeftable(m_state_period)
-          if (war_var %in% rownames(ct_sp)) {
+          if (iv_main %in% rownames(ct_sp)) {
             out_list[[length(out_list) + 1]] <- tibble(
               level = "state", dv = dv, war_variable = war_var,
               weighting = method, transform = tfm, layers = combo_name,
               n_layers = length(layers_subset),
               model = "state_period_fe",
               exposure = exposure_label,
-              coef = ct_sp[war_var, "Estimate"],
-              se = ct_sp[war_var, "Std. Error"],
-              pval = ct_sp[war_var, "Pr(>|t|)"],
+              coef = ct_sp[iv_main, "Estimate"],
+              se = ct_sp[iv_main, "Std. Error"],
+              pval = ct_sp[iv_main, "Pr(>|t|)"],
               n_obs = nrow(analysis_sub),
               has_offensive = has_offensive, has_defensive = has_defensive,
               has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
@@ -1706,15 +2230,14 @@ for (tfm in transform_methods) {
         }
         }  # end if (FALSE) -- state_period_fe disabled, see note above
 
-        # (E. Spillover specs removed — spillover analysis is now confined
-        # to 21_spillover_nonfighters.R; see notes at top of file.)
+        # (E. The old spillover specs were removed; the spillover CONTROL lives in the extra-control loop above.)
 
         }  # end control_sets loop
 
         # ── B. Baseline (no FE, no controls) — run once, no exposure variant.
         # Includes a quadratic year trend (poly(year, 2)) to mirror the
         # main-text Table 3 cols 1-2 spec ladder. ──
-        fml_biv <- as.formula(paste(dv_col, "~", war_var, "+ poly(year, 2)"))
+        fml_biv <- as.formula(paste(dv_col, "~", iv_main, "+ poly(year, 2)"))
 
         m_biv <- tryCatch(
           lm(fml_biv, data = analysis_sub),
@@ -1722,15 +2245,15 @@ for (tfm in transform_methods) {
         )
         if (!is.null(m_biv)) {
           sm <- summary(m_biv)$coefficients
-          if (war_var %in% rownames(sm)) {
+          if (iv_main %in% rownames(sm)) {
             out_list[[length(out_list) + 1]] <- tibble(
               level = "state", dv = dv, war_variable = war_var,
               weighting = method, transform = tfm, layers = combo_name,
               n_layers = length(layers_subset), model = "baseline_noFE",
               exposure = "none",
-              coef = sm[war_var, "Estimate"],
-              se = sm[war_var, "Std. Error"],
-              pval = sm[war_var, "Pr(>|t|)"],
+              coef = sm[iv_main, "Estimate"],
+              se = sm[iv_main, "Std. Error"],
+              pval = sm[iv_main, "Pr(>|t|)"],
               n_obs = nrow(analysis_sub),
               has_offensive = has_offensive, has_defensive = has_defensive,
               has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
@@ -1743,12 +2266,18 @@ for (tfm in transform_methods) {
       }  # end dv loop
     }  # end war_var loop
 
-      result <- dplyr::bind_rows(out_list)
-      rm(out_list)
+      res_r <- dplyr::bind_rows(out_list)
+      if (nrow(res_r) > 0) res_r$bellig_rule <- bellig_rule
+      res_r
+      })  # end bellig_rule lapply (state)
+
+      result <- dplyr::bind_rows(rule_results)
+      rm(rule_results)
       gc(verbose = FALSE)
       result
     }, .options = furrr::furrr_options(seed = TRUE))  # end combo future_map (state)
 
+    attr(triple_dfs_state, "mv_schema") <- MV_SCHEMA_VERSION
     saveRDS(triple_dfs_state, ckpt_path_state)
     n_saved <- nrow(triple_dfs_state)
     rm(triple_dfs_state)
@@ -1774,15 +2303,61 @@ cat(sprintf("\n  State-level specs: %d\n", n_state_specs))
 # the full multiverse here from the per-(tfm, method) RDS files.
 
 cat("\n  Reloading checkpoints from disk for aggregation...\n")
-ckpt_files <- list.files(CHECKPOINT_DIR, pattern = "\\.rds$", full.names = TRUE)
-spec_results <- lapply(ckpt_files, readRDS)
+# [2026-10-13] load exactly the batches this configuration produces (stray files from older grids are ignored
+# and reported; a missing batch stops the run).
+expected_ckpt <- c(
+  unlist(lapply(transform_methods, function(t) lapply(weighting_methods, function(m)
+    if (cell_varies_by_transform(t, m)) sprintf("system__%s__%s.rds", t, m)))),
+  unlist(lapply(STATE_TRANSFORMS, function(t) lapply(weighting_methods, function(m)
+    if (cell_varies_by_transform(t, m)) sprintf("state__%s__%s.rds", t, m)))))
+stray_ckpt <- setdiff(basename(list.files(CHECKPOINT_DIR, pattern = "\\.rds$")), expected_ckpt)
+if (length(stray_ckpt) > 0) cat("  Ignoring checkpoint files not in this grid:", paste(stray_ckpt, collapse = ", "), "\n")
+ckpt_files <- file.path(CHECKPOINT_DIR, expected_ckpt)
+if (!all(file.exists(ckpt_files))) stop("missing checkpoint batches: ", paste(expected_ckpt[!file.exists(ckpt_files)], collapse = ", "))
+spec_results <- lapply(ckpt_files, read_ckpt)   # stops on any checkpoint with a different schema
 specs_df <- bind_rows(spec_results)
+# [2026-10-13] FE_full fit coverage: attempted vs estimated, by cell type. Non-"ok" rows leave the results here.
+if (!"fit_status" %in% names(specs_df)) specs_df$fit_status <- NA_character_
+fit_cov <- specs_df |>
+  dplyr::filter(!is.na(fit_status)) |>
+  dplyr::mutate(status = dplyr::if_else(grepl("^error:", fit_status), "error", fit_status)) |>
+  dplyr::count(level, war_variable, dv, layers, weighting, model, extra_control, bellig_rule, status)
+readr::write_csv(fit_cov, file.path(OUTPUT_DIR, "robustness_fit_coverage.csv"))
+cat("  FE_full fit coverage (non-ok rows dropped from results):\n")
+print(fit_cov |> dplyr::group_by(extra_control, status) |> dplyr::summarise(n = sum(n), .groups = "drop"))
+err_msgs <- specs_df |> dplyr::filter(grepl("^error:", fit_status)) |> dplyr::count(fit_status, sort = TRUE)
+if (nrow(err_msgs) > 0) { cat("  FE_full errors:\n"); print(utils::head(err_msgs, 20)) }
+specs_df <- specs_df |> dplyr::filter(is.na(fit_status) | fit_status == "ok") |> dplyr::select(-fit_status)
 rm(spec_results)
 gc(verbose = FALSE)
 cat(sprintf("  Loaded %d checkpoint files, %d total spec rows.\n",
               length(ckpt_files), nrow(specs_df)))
 
-# `extra_control` only exists on FE_full rows (the GDP / strength dimension).
+# [2026-10-12] Split the state timing x FE x clustering grid out of specs_df (own CSV, for plotting).
+if (STATE_TFE_ENABLED) {
+  stopifnot("grid" %in% names(specs_df))
+  tfe_specs_df <- specs_df |> dplyr::filter(!is.na(grid), grid == "timing_fe")
+  if (nrow(tfe_specs_df) == 0) stop("timing_fe grid is empty: state checkpoints predate the grid; rerun with ROBUSTNESS_RESET=1")
+  specs_df <- specs_df |> dplyr::filter(is.na(grid) | grid != "timing_fe") |>
+    dplyr::select(-grid, -iv_timing, -iv_term, -fe_structure, -clustering)
+  # [2026-10-12] gzip: with the bellig_rule dimension this file has every rule (read_csv reads .gz directly)
+  readr::write_csv(tfe_specs_df, file.path(OUTPUT_DIR, "robustness_specifications_timing_fe.csv.gz"))
+  cat(sprintf("  timing_fe grid: %d rows -> robustness_specifications_timing_fe.csv.gz\n", nrow(tfe_specs_df)))
+  print(tfe_specs_df |> dplyr::count(iv_timing, iv_term, fe_structure, clustering))
+  print(tfe_specs_df |> dplyr::count(bellig_rule))
+  rm(tfe_specs_df)
+}
+
+# [2026-10-12] Belligerent-dyad rule dimension: every rule -> its own file; specs_df keeps rule "none" only,
+# so every rate, spec curve and meta-regression below keeps its pre-rule meaning (all dyads).
+stopifnot("bellig_rule" %in% names(specs_df), !anyNA(specs_df$bellig_rule),
+          setequal(unique(specs_df$bellig_rule), BELLIG_RULES))
+readr::write_csv(specs_df, file.path(OUTPUT_DIR, "robustness_specifications_bellig.csv.gz"))
+cat(sprintf("  bellig_rule sweep: %d rows -> robustness_specifications_bellig.csv.gz\n", nrow(specs_df)))
+print(specs_df |> dplyr::count(level, bellig_rule))
+specs_df <- specs_df |> dplyr::filter(bellig_rule == "none") |> dplyr::select(-bellig_rule)
+
+# `extra_control` only exists on FE_full rows (the GDP / strength / spillover dimension).
 # Every other row -- system level, no-FE classes, bivariate -- is the baseline
 # control set. bind_rows fills the column with NA; label it explicitly so
 # downstream filters and facets can key on it without NA handling.
@@ -1826,16 +2401,27 @@ cat(sprintf("  System: %d\n", sum(specs_df$level == "system")))
 ALPHA_ONESIDE <- 0.10
 
 is_sig_pos <- function(coef, p) coef > 0 & p / 2 < ALPHA_ONESIDE
+SIG_POS_LAB <- sprintf("Positive & significant (one-sided p<%.2f)", ALPHA_ONESIDE)   # [2026-10-13] label from alpha
 
 cat(sprintf("  State: %d\n", sum(specs_df$level == "state")))
-cat(sprintf("  Significant positive (one-sided, alpha=%.2f): %d / %d (%.1f%%)\n",
+# [2026-10-13] Granger rows carry F-statistics (no sign) and already upper-tail p-values: they are not
+# directional estimates, so every "significant positive" summary below excludes them.
+GRANGER_MODELS <- c("VAR_Granger", "VAR_Granger_reverse")
+specs_dir <- specs_df |> dplyr::filter(!model %in% GRANGER_MODELS)
+cat(sprintf("  Significant positive (one-sided, alpha=%.2f), excl. Granger: %d / %d (%.1f%%)\n",
             ALPHA_ONESIDE,
-            sum(is_sig_pos(specs_df$coef, specs_df$pval), na.rm = TRUE),
-            nrow(specs_df),
-            100 * mean(is_sig_pos(specs_df$coef, specs_df$pval), na.rm = TRUE)))
+            sum(is_sig_pos(specs_dir$coef, specs_dir$pval), na.rm = TRUE),
+            nrow(specs_dir),
+            100 * mean(is_sig_pos(specs_dir$coef, specs_dir$pval), na.rm = TRUE)))
+cat("\nGranger tests (share with p < 0.10 / p < 0.05):\n")
+specs_df |> dplyr::filter(model %in% GRANGER_MODELS) |>
+  dplyr::group_by(model) |>
+  dplyr::summarise(n = dplyr::n(), p10 = mean(pval < 0.10, na.rm = TRUE), p05 = mean(pval < 0.05, na.rm = TRUE),
+                   .groups = "drop") |>
+  print()
 
 cat("\nBy level and DV:\n")
-specs_df |>
+specs_dir |>
   group_by(level, dv) |>
   summarise(n = n(),
             pct_sig_pos = 100 * mean(is_sig_pos(coef, pval), na.rm = TRUE),
@@ -1843,7 +2429,7 @@ specs_df |>
   print()
 
 cat("\nBy war variable:\n")
-specs_df |>
+specs_dir |>
   group_by(war_variable) |>
   summarise(n = n(),
             pct_sig_pos = 100 * mean(is_sig_pos(coef, pval), na.rm = TRUE),
@@ -1851,7 +2437,7 @@ specs_df |>
   print()
 
 cat("\nBy model type:\n")
-specs_df |>
+specs_dir |>
   group_by(model) |>
   summarise(n = n(),
             pct_sig_pos = 100 * mean(is_sig_pos(coef, pval), na.rm = TRUE),
@@ -1859,7 +2445,7 @@ specs_df |>
   print()
 
 cat("\nBy weighting:\n")
-specs_df |>
+specs_dir |>
   group_by(weighting) |>
   summarise(n = n(),
             pct_sig_pos = 100 * mean(is_sig_pos(coef, pval), na.rm = TRUE),
@@ -1913,8 +2499,10 @@ specs_df <- specs_df |>
 # so the FDR columns are available to every downstream consumer (spec
 # curve plot, summary tables, meta-regs, etc.). The standard spec-curve
 # adjustment for dependent multiple tests within a single DV's multiverse.
+# [2026-10-13] Granger F-test rows form their own family (is_granger), not part of the directional one.
 specs_df <- specs_df |>
-  group_by(level, dv) |>
+  mutate(is_granger = model %in% c("VAR_Granger", "VAR_Granger_reverse")) |>
+  group_by(level, dv, is_granger) |>
   mutate(
     pval_fdr_iid = if (sum(!is.na(pval))     > 0) p.adjust(pval,     method = "BH") else NA_real_,
     pval_fdr_hc1 = if ("hc1_pval" %in% names(cur_data()) && sum(!is.na(hc1_pval)) > 0)
@@ -1926,8 +2514,14 @@ specs_df <- specs_df |>
   ) |>
   ungroup()
 
+# [2026-10-13] write the deliverable before the plotting sections (rewritten at the end with the same content).
+write_csv(specs_df, file.path(OUTPUT_DIR, "robustness_specifications.csv"))
+
 specs_for_coef <- specs_df |> filter(!model %in% c("VAR_Granger",
-                                                     "VAR_Granger_reverse"))
+                                                     "VAR_Granger_reverse")) |>
+  # [2026-10-13] baseline meta-regressions use extra_control == "none" only; each extra control gets its own
+  # meta-regression below (one control measure per model).
+  filter(dplyr::coalesce(extra_control, "none") == "none")
 
 # Helper: drop RHS variables with fewer than 2 unique non-NA values.
 # Required because system and state subsets each have a different set of
@@ -1962,7 +2556,7 @@ drop_singletons <- function(df, rhs_vars) {
 #         - transform    : "raw"         (headline IV transform)
 #         - model        : "FE_full_ccode_year" (headline state TWFE) for
 #                            state subsets, "OLS_lagged" for system.
-#         - exposure     : "weighted"    (headline state PWE control)
+#         - exposure     : constant "none" (PWE removed 2026-10-12); set_ref skips it
 binarize_logicals <- function(df) {
   df <- df |>
     dplyr::mutate(dplyr::across(dplyr::where(is.logical), as.integer)) |>
@@ -1987,6 +2581,7 @@ binarize_logicals <- function(df) {
   df <- set_ref(df, "weighting", "unweighted")
   df <- set_ref(df, "transform", "raw")
   df <- set_ref(df, "exposure",  "weighted")
+  df <- set_ref(df, "extra_control", "none")   # [2026-10-13]
   # model reference depends on level — pick FE_full_ccode_year if the
   # subset has it (state), otherwise OLS_lagged (system).
   if ("model" %in% names(df)) {
@@ -2011,6 +2606,7 @@ build_pval_long <- function(df) {
                   is_onset, iv_is_fatal, iv_is_log,
                   weighting, transform, model, war_variable,
                   level, dv, exposure, partner_ctrl_weighted, year_start,
+                  dplyr::any_of("extra_control"),
                   dv_logged, model_no_fe, model_year_poly,
                   state_dv_canonical) |>
     tidyr::pivot_longer(
@@ -2115,7 +2711,8 @@ run_meta_split <- function(label, coef_df, pval_df,
 RHS_VARS_FULL <- c("has_offensive", "has_defensive", "has_igo",
                    "has_trade", "has_dca",
                    "weighting", "transform", "model", "war_variable",
-                   "dv", "year_start")
+                   "dv", "year_start",
+                   "extra_control")   # [2026-10-13] none / gdp / strength / spillover / comm_spill (state)
 
 OMNI_OUT_DIR <- APPX_DIR
 dir.create(OMNI_OUT_DIR, recursive = TRUE, showWarnings = FALSE)
@@ -2146,6 +2743,33 @@ m_meta_st <- run_meta_split(
   out_tag = "omnibus_state"
 )
 
+# [2026-10-13] One meta-regression per extra control. Sample: baseline ("none") rows plus that ONE control's
+# rows, on exactly the cells where the control is estimated (state, FE_full, GDP_STRENGTH_IVS x
+# GDP_STRENGTH_DVS), so extra_control is a single none-vs-control dummy and the two arms are balanced.
+specs_extra_cells <- specs_df |>
+  dplyr::filter(level == "state", grepl("^FE_full_", model),
+                war_variable %in% GDP_STRENGTH_IVS, dv %in% GDP_STRENGTH_DVS) |>
+  dplyr::mutate(extra_control = dplyr::coalesce(extra_control, "none"))
+extra_share_tab <- specs_extra_cells |>
+  dplyr::group_by(extra_control, war_variable) |>
+  dplyr::summarise(n = dplyr::n(), pct_sig_pos = 100 * mean(is_sig_pos(coef, pval), na.rm = TRUE),
+                   median_coef = stats::median(coef, na.rm = TRUE), .groups = "drop")
+cat("\nExtra controls: share significant-positive on the cells where they are estimated:\n")
+print(extra_share_tab, n = Inf)
+readr::write_csv(extra_share_tab, file.path(OUTPUT_DIR, "robustness_extra_control_shares.csv"))
+m_meta_extra <- list()
+for (xc in setdiff(EXTRA_CTRLS, "none")) {
+  sub_xc <- specs_extra_cells |> dplyr::filter(extra_control %in% c("none", xc))
+  if (dplyr::n_distinct(sub_xc$extra_control) < 2) { cat("  extra control", xc, "has no rows; meta skipped\n"); next }
+  m_meta_extra[[xc]] <- run_meta_split(
+    label   = paste0("Extra control: ", xc, " (vs none)"),
+    coef_df = sub_xc,
+    pval_df = build_pval_long(sub_xc),
+    rhs_vars_full = RHS_VARS_FULL,
+    out_dir = OMNI_OUT_DIR,
+    out_tag = paste0("extra_", xc))
+}
+
 # ── Backwards-compatibility shims for downstream blocks ──
 # Some downstream code (extract_meta_coefs, conditional-effect summary,
 # p-value distribution plot, texreg combined output) expects
@@ -2162,7 +2786,7 @@ m_meta_sig     <- or_null(m_meta_st$sig,  m_meta_sys$sig)
 pval_long_meta <- dplyr::bind_rows(pval_sys, pval_st)
 
 # =========================================================================== #
-# 8b. H1 / H2 / H3 filtered meta-regressions
+# 8b. H1 / H2 filtered meta-regressions
 # =========================================================================== #
 # Three filtered meta-regressions tied directly to the manuscript's three
 # hypotheses. Each runs the same trio (coef LM, -log10(p) LM, sig logit)
@@ -2174,9 +2798,6 @@ pval_long_meta <- dplyr::bind_rows(pval_sys, pval_st)
 #   H2: war reshapes a state's OWN connections
 #       level == "state", IV ∈ {own-MID onset/count family}, model ∈ Table 3
 #       column classes (baseline, full_noFE_year_poly, FE_full_*).
-#   H3: war reshapes a PARTNER's network (1-hop spillover)
-#       level == "state", IV ∈ {partner_war_frac variants}, same model set
-#       as H2.
 #
 # Each H-meta-reg writes its own coef table to results/appendix/.
 
@@ -2184,9 +2805,6 @@ OWN_MID_IVS <- c("mid_onset_count", "log_mid_onset_count",
                  "fatal_mid_onset_count", "log_fatal_mid_onset_count",
                  "mid_count", "log_mid_count",
                  "fatal_mid_count", "log_fatal_mid_count")
-
-PWF_IVS <- c("partner_war_frac", "partner_war_frac_weighted",
-             "partner_fatal_war_frac", "partner_fatal_war_frac_weighted")
 
 H1_MODELS <- c("sys_T1_iv_only", "OLS_lagged",
                "sys_T1_ar1", "sys_T1_order_period",
@@ -2196,7 +2814,6 @@ H1_MODELS <- c("sys_T1_iv_only", "OLS_lagged",
 # SE class names removed; clustering schemes are now ccode+year, year,
 # ccode only):
 #   col 1 (IV alone + poly(year, 2)):     baseline_noFE
-#   col 2 (PWE alone + poly(year, 2)):    baseline_noFE filtered to PWF IVs (H3)
 #   col 3 (+ ctrls, no FE):               full_noFE / full_noFE_year_poly
 #   col 4 (TWFE):                         FE_full_ccode_year
 H_STATE_MODELS <- c("baseline_noFE",
@@ -2232,7 +2849,8 @@ run_h_meta <- function(label, coef_df, pval_df, h_dir, h_tag) {
   rhs_full <- c("has_offensive", "has_defensive", "has_igo",
                 "has_trade", "has_dca",
                 "weighting", "transform", "model", "war_variable",
-                "dv", "year_start")
+                "dv", "year_start",
+                "extra_control")   # [2026-10-13]
 
   rhs_coef <- drop_singletons(coef_df, rhs_full)
   # Intercept-coded formula: reference level for each factor is absorbed
@@ -2324,18 +2942,6 @@ h2_pval <- pval_long_meta |>
 h2_meta <- run_h_meta("H2: war reshapes a state's own connections",
                        h2_coef, h2_pval, H_DIR, "H2_state_own")
 
-# H3 ------------------------------------------------------------
-h3_coef <- specs_for_coef |>
-  dplyr::filter(level == "state",
-                war_variable %in% PWF_IVS,
-                model %in% H_STATE_MODELS)
-h3_pval <- pval_long_meta |>
-  dplyr::filter(level == "state",
-                war_variable %in% PWF_IVS,
-                model %in% H_STATE_MODELS)
-h3_meta <- run_h_meta("H3: war reshapes partners' networks (1-hop spillover)",
-                       h3_coef, h3_pval, H_DIR, "H3_state_partner")
-
 # Quick console summary: how much do new indicators move the conditional
 # mean of -log10(p) relative to the reference cell?
 cat("\n--- Conditional effect of new perturbation indicators on -log10(p) ---\n")
@@ -2372,6 +2978,7 @@ extract_meta_coefs <- function(model, model_name) {
         term == "has_igoTRUE" ~ "Incl. IGO Co-membership",
         term == "has_igoFALSE" ~ "No IGO Co-membership",
         term == "has_tradeTRUE" ~ "Incl. Bilateral Trade",
+        startsWith(term, "extra_control") ~ paste0("Extra control: ", sub("^extra_control", "", term)),
         term == "has_tradeFALSE" ~ "No Bilateral Trade",
         term == "has_dcaTRUE" ~ "Incl. Defense Coop. (DCA)",
         term == "has_dcaFALSE" ~ "No Defense Coop. (DCA)",
@@ -2485,7 +3092,8 @@ tile_data <- specs_df |>
       str_replace_all("igo", "IGO") |>
       str_replace_all("dca", "DCA")
   ) |>
-  group_by(war_variable, layers_short, scheme) |>
+  # [2026-10-12] `level` added: state and system sweeps share IV names (mid_count etc.), so tiles must not pool them.
+  group_by(level, war_variable, layers_short, scheme) |>
   summarise(
     # One-sided positive at ALPHA_ONESIDE; matches s-curve / forest / console.
     sig_pos_share = mean(is_sig_pos(coef, pval), na.rm = TRUE),
@@ -2510,14 +3118,14 @@ tile_data <- tile_data |>
 
 # Split into 4 separate plots, each with count + log(1+count) pair
 tile_groups <- list(
-  list(vars = c("mid_count", "log_mid_count"),
+  list(vars = c("mid_count", "log_mid_count"), level = "system",
        title = "System: MID count", file = "fig_tile_mid_count.png"),
-  list(vars = c("fatal_mid_count", "log_fatal_mid_count"),
+  list(vars = c("fatal_mid_count", "log_fatal_mid_count"), level = "system",
        title = "System: fatal MID", file = "fig_tile_fatal_mid_count.png"),
-  list(vars = c("mid_onset_count", "log_mid_onset_count"),
-       title = "State: MID onset", file = "fig_tile_mid_onset_count.png"),
-  list(vars = c("fatal_mid_onset_count", "log_fatal_mid_onset_count"),
-       title = "State: fatal MID onset", file = "fig_tile_fatal_mid_onset_count.png")
+  list(vars = c("mid_onset_count", "log_mid_onset_count"), level = "state",
+       title = "State: MID onset (t-1)", file = "fig_tile_mid_onset_count.png"),
+  list(vars = c("fatal_mid_onset_count", "log_fatal_mid_onset_count"), level = "state",
+       title = "State: fatal MID onset (t-1)", file = "fig_tile_fatal_mid_onset_count.png")
 )
 
 tile_theme <- theme_minimal(base_size = 10) +
@@ -2534,7 +3142,7 @@ tile_theme <- theme_minimal(base_size = 10) +
         plot.margin = margin(t = 10, r = 12, b = 14, l = 10))
 
 for (tg in tile_groups) {
-  td <- tile_data |> filter(war_variable %in% tg$vars) |>
+  td <- tile_data |> filter(level == tg$level, war_variable %in% tg$vars) |>
     mutate(iv_label = factor(iv_label, levels = iv_labels_tile[tg$vars]))
   if (nrow(td) == 0) next
 
@@ -2584,7 +3192,6 @@ model_readable <- c(
   FE_full_year_only = "FE\n(Year FE)",
   FE_full_ccode_only = "FE\n(State FE)",
   baseline_noFE = "Baseline",
-  baseline_pwf  = "PWF Baseline",
   full_noFE = "OLS Full\n(No FE)",
   full_noFE_year_poly = "OLS Full\n(No FE +\npoly(year,2))",
   state_period_fe = "State + Period FE",
@@ -2676,15 +3283,8 @@ for (focus in list(
     weighting    = "Edge\nWeighting",
     transform    = "Transform",
     model        = "Estimator",
-    exposure     = "Partner War\nExposure",
     layers       = "Layer\nCombination",
     n_layers     = "Number of\nLayers"
-  )
-
-  exposure_readable <- c(
-    unweighted = "Unweighted",
-    weighted   = "Tie-Weighted",
-    none       = "None (Bivariate)"
   )
 
   indicator_data <- curve_data |>
@@ -2693,10 +3293,9 @@ for (focus in list(
       weighting = recode(weighting, !!!weighting_readable),
       model = recode(model, !!!model_readable),
       transform = recode(transform, !!!transform_readable),
-      exposure = recode(replace_na(exposure, "none"), !!!exposure_readable),
       layers = layers_readable(layers)
     ) |>
-    select(spec_rank, war_variable, weighting, transform, model, exposure, layers) |>
+    select(spec_rank, war_variable, weighting, transform, model, layers) |>
     mutate(n_layers = as.character(str_count(layers, "\\+") + 1)) |>
     pivot_longer(-spec_rank, names_to = "choice", values_to = "value") |>
     mutate(
@@ -2868,7 +3467,7 @@ ggsave(file.path(FIG_DIR, "fig_pvalue_boxplot.png"), p_pval_box,
 
 # (iii) Coefficient distribution — one box per DV, dropping VAR/Granger specs,
 # paired with the share of specifications that are positive AND significant
-# at the one-sided 0.05 level (using is_sig_pos defined above).
+# at the one-sided ALPHA_ONESIDE level (using is_sig_pos defined above).
 coef_focus <- specs_df |>
   filter(!model %in% c("VAR_Granger", "VAR_Granger_reverse"),
          dv %in% focus_dvs) |>
@@ -2898,14 +3497,13 @@ p_coef_box <- ggplot(coef_focus, aes(x = dv, y = coef)) +
         plot.title   = element_text(face = "bold"),
         plot.margin  = margin(t = 10, r = 12, b = 14, l = 10))
 
-# (iii-b) Share positive & significant (one-sided p < 0.05): blue = pos+sig,
+# (iii-b) Share positive & significant (one-sided p < ALPHA_ONESIDE): blue = pos+sig,
 # red = null. Uses is_sig_pos(coef, pval) = coef > 0 & pval/2 < ALPHA_ONESIDE.
 coef_sig_df <- coef_focus |>
   filter(!is.na(coef), !is.na(pval)) |>
   mutate(sig_cat = factor(
-    if_else(is_sig_pos(coef, pval),
-            "Positive & significant (one-sided p<0.05)", "Null"),
-    levels = c("Positive & significant (one-sided p<0.05)", "Null"))) |>
+    if_else(is_sig_pos(coef, pval), SIG_POS_LAB, "Null"),
+    levels = c(SIG_POS_LAB, "Null"))) |>
   count(dv, sig_cat, .drop = FALSE) |>
   group_by(dv) |>
   mutate(share = n / sum(n)) |>
@@ -2914,18 +3512,16 @@ coef_sig_df <- coef_focus |>
 p_coef_bar <- ggplot(coef_sig_df, aes(x = dv, y = share, fill = sig_cat)) +
   geom_col(width = 0.55) +
   geom_text(aes(label = ifelse(
-              sig_cat == "Positive & significant (one-sided p<0.05)" & share > 0.06,
+              sig_cat == SIG_POS_LAB & share > 0.06,
               scales::percent(share, accuracy = 1), "")),
             position = position_stack(vjust = 0.5),
             color = "white", size = 3, fontface = "bold") +
-  scale_fill_manual(values = c(
-      "Positive & significant (one-sided p<0.05)" = "#2C6CB0",
-      "Null"                                      = "#B03366"),
+  scale_fill_manual(values = stats::setNames(c("#2C6CB0", "#B03366"), c(SIG_POS_LAB, "Null")),
       name = NULL) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1),
                      expand = expansion(mult = c(0, 0.02))) +
   labs(
-    title    = "(b) % positive & significant (one-sided p < 0.05)",
+    title    = sprintf("(b) %% positive & significant (one-sided p < %.2f)", ALPHA_ONESIDE),
     x        = "Dependent variable",
     y        = "Share of specifications"
   ) +
@@ -2978,7 +3574,7 @@ cat("  Forest plot...\n")
 forest_all <- specs_df |>
   filter(model %in% c("OLS_lagged", "FE_full_ccode_year"),
          weighting == "unweighted", transform == "raw",
-         layers == "defensive+igo") |>
+         layers == "offensive+defensive+igo") |>   # [2026-10-12] headline layers (was defensive+igo)
   mutate(
     ci_lo = coef - 1.96 * se,
     ci_hi = coef + 1.96 * se,
@@ -3064,7 +3660,7 @@ fevd_horizon_data <- list()
 # the rebuild block above). Headline spec: unweighted, raw, defensive+IGO.
 if (!exists("analysis_data_main") || is.null(analysis_data_main)) {
   cat("  Rebuilding analysis_data_main (headline spec) inline...\n")
-  layers_main_   <- c("layer_defensive", "layer_igo")
+  layers_main_   <- MAIN_LAYERS   # [2026-10-12] headline network = offensive + defensive + IGO
   manhattan_main_ <- compute_manhattan_vec(dyad_data, layers_main_, "unweighted")
   dv_df_main_    <- compute_system_dvs(dyad_data, manhattan_main_)
   yr_main_       <- get_valid_year_range(layers_main_)
@@ -3086,14 +3682,18 @@ if (!is.null(analysis_data_main)) {
 for (wv in system_war_vars) {
   for (dv in granger_dvs) {
     fevd_fit <- tryCatch({
+      # [2026-10-13] same exogenous controls (n_states added) and consecutive-year rule as the main VAR
       var_block <- analysis_data_main |>
-        select(all_of(c(wv, dv, "n_democracies", "n_autocracies"))) |>
+        arrange(year) |>
+        select(all_of(c("year", wv, dv, "n_democracies", "n_autocracies", "n_states"))) |>
         na.omit()
       if (nrow(var_block) < 30) stop("too few")
+      if (any(diff(var_block$year) != 1)) stop("non-consecutive years in VAR block")
+      var_block <- var_block |> select(-year)
 
       var_endo <- var_block |> select(all_of(c(wv, dv))) |> as.ts()
       var_exog <- var_block |>
-        select(n_democracies, n_autocracies) |> mutate_all(log1p) |> as.ts()
+        select(n_democracies, n_autocracies, n_states) |> mutate_all(log1p) |> as.ts()
 
       opt_lag <- tryCatch({
         sel <- VARselect(var_endo, lag.max = 8, type = "both", exogen = var_exog)
@@ -3250,9 +3850,14 @@ for (drop_layer in all_layer_vars) {
 
   loo_manhattan <- compute_manhattan_vec(dyad_data, remaining, "unweighted")
   loo_dvs <- compute_system_dvs(dyad_data, loo_manhattan)
+  loo_yr <- get_valid_year_range(remaining)   # [2026-10-13] coverage window of the remaining layers
   loo_analysis <- loo_dvs |>
     inner_join(system_war, by = "year") |>
     inner_join(sys_controls, by = "year") |>
+    filter(year >= loo_yr[1], year <= loo_yr[2]) |>
+    arrange(year) |>
+    # [2026-10-13] first covered year compares against a pre-coverage network (as in the main grid)
+    mutate(kl_divergence = dplyr::if_else(year == loo_yr[1], NA_real_, kl_divergence)) |>
     filter(!is.na(kl_divergence))
   if (nrow(loo_analysis) < 20) next
 
@@ -3261,13 +3866,17 @@ for (drop_layer in all_layer_vars) {
   for (wv in system_war_vars) {
     # Granger with exogenous controls
     g <- tryCatch({
+      # [2026-10-13] same exogenous controls (n_states added) and consecutive-year rule as the main VAR
       var_block <- loo_analysis |>
-        select(all_of(c(wv, "kl_divergence", "n_democracies", "n_autocracies"))) |>
+        arrange(year) |>
+        select(all_of(c("year", wv, "kl_divergence", "n_democracies", "n_autocracies", "n_states"))) |>
         na.omit()
       if (nrow(var_block) < 30) stop("too few")
+      if (any(diff(var_block$year) != 1)) stop("non-consecutive years in VAR block")
+      var_block <- var_block |> select(-year)
 
       var_endo <- var_block |> select(all_of(c(wv, "kl_divergence"))) |> as.ts()
-      var_exog <- var_block |> select(n_democracies, n_autocracies) |>
+      var_exog <- var_block |> select(n_democracies, n_autocracies, n_states) |>
         mutate_all(log1p) |> as.ts()
 
       opt_lag <- tryCatch({
@@ -3276,7 +3885,7 @@ for (drop_layer in all_layer_vars) {
       }, error = function(e) 2L)
 
       vf <- VAR(var_endo, p = opt_lag, type = "both", exogen = var_exog)
-      gc <- causality(vf, cause = wv, boot.runs = 100)
+      gc <- causality(vf, cause = wv)
       list(f = as.numeric(gc$Granger$statistic),
            p = as.numeric(gc$Granger$p.value),
            vf = vf)
@@ -3289,7 +3898,7 @@ for (drop_layer in all_layer_vars) {
       )
       # Reverse Granger
       g_rev <- tryCatch({
-        gc_rev <- causality(g$vf, cause = "kl_divergence", boot.runs = 100)
+        gc_rev <- causality(g$vf, cause = "kl_divergence")
         list(f = as.numeric(gc_rev$Granger$statistic),
              p = as.numeric(gc_rev$Granger$p.value))
       }, error = function(e) NULL)
@@ -3320,21 +3929,36 @@ layer_results <- list()
 
 for (lv in unique(layer_specific_ts$layer)) {
   lc <- gsub("layer_", "", lv)
+  # [2026-10-13] coverage window and first-covered-year rule of the layer, as in the main grid
+  ld_yr <- if (lv %in% names(LAYER_COVERAGE)) LAYER_COVERAGE[[lv]] else range(layer_specific_ts$year)
   ld <- layer_specific_ts |>
-    filter(layer == lv, !is.na(kl_divergence)) |>
+    filter(layer == lv, year >= ld_yr[1], year <= ld_yr[2]) |>
+    arrange(year) |>
+    mutate(kl_divergence = dplyr::if_else(year == ld_yr[1], NA_real_, kl_divergence)) |>
+    filter(!is.na(kl_divergence)) |>
     inner_join(system_war, by = "year") |>
     inner_join(sys_controls, by = "year")
   if (nrow(ld) < 20) next
+  # [2026-10-13] a VAR needs consecutive years; say so instead of losing the layer silently (offensive
+  # alliances have no edges in several years, e.g. 1823-1831 and 1922-1938)
+  if (any(diff(sort(unique(ld$year))) != 1)) {
+    cat(sprintf("  %s: skipped (non-consecutive years in the layer series; VAR not estimable)\n", lc))
+    next
+  }
 
   for (wv in system_war_vars) {
     g <- tryCatch({
+      # [2026-10-13] same exogenous controls (n_states added) and consecutive-year rule as the main VAR
       var_block <- ld |>
-        select(all_of(c(wv, "kl_divergence", "n_democracies", "n_autocracies"))) |>
+        arrange(year) |>
+        select(all_of(c("year", wv, "kl_divergence", "n_democracies", "n_autocracies", "n_states"))) |>
         na.omit()
       if (nrow(var_block) < 30) stop("too few")
+      if (any(diff(var_block$year) != 1)) stop("non-consecutive years in VAR block")
+      var_block <- var_block |> select(-year)
 
       var_endo <- var_block |> select(all_of(c(wv, "kl_divergence"))) |> as.ts()
-      var_exog <- var_block |> select(n_democracies, n_autocracies) |>
+      var_exog <- var_block |> select(n_democracies, n_autocracies, n_states) |>
         mutate_all(log1p) |> as.ts()
 
       opt_lag <- tryCatch({
@@ -3343,7 +3967,7 @@ for (lv in unique(layer_specific_ts$layer)) {
       }, error = function(e) 2L)
 
       vf <- VAR(var_endo, p = opt_lag, type = "both", exogen = var_exog)
-      gc <- causality(vf, cause = wv, boot.runs = 100)
+      gc <- causality(vf, cause = wv)
       list(f = as.numeric(gc$Granger$statistic),
            p = as.numeric(gc$Granger$p.value),
            vf = vf)
@@ -3356,7 +3980,7 @@ for (lv in unique(layer_specific_ts$layer)) {
       )
       # Reverse Granger
       g_rev <- tryCatch({
-        gc_rev <- causality(g$vf, cause = "kl_divergence", boot.runs = 100)
+        gc_rev <- causality(g$vf, cause = "kl_divergence")
         list(f = as.numeric(gc_rev$Granger$statistic),
              p = as.numeric(gc_rev$Granger$p.value))
       }, error = function(e) NULL)
@@ -3410,7 +4034,7 @@ texreg(list(m_meta_coef, m_meta_pval, m_meta_sig),
        booktabs = TRUE, use.packages = FALSE,
        stars = c(0.001, 0.01, 0.05, 0.1),
        symbol = "$^{\\dagger}$",
-       custom.note = "Each observation is one specification across the full multiverse (system + state, raw + logged DV, raw + logged IV, all layer combos and weighting schemes). All models suppress the intercept. $^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.")
+       custom.note = "Each observation is one state-level baseline specification in the multiverse (layer combinations, weighting schemes, conflict measures, churn measures and model classes; no extra controls; Granger F-tests excluded). Separate meta-regressions for each extra control are in meta\\_extra\\_*.csv. Factor coefficients are deviations from the reference category; the intercept is included. $^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.")
 cat("  Meta-regression → results/appendix/robustness_meta_regression.tex\n")
 
 # ── 13b. Specification curve summary table ──
@@ -3422,7 +4046,7 @@ cat("  Meta-regression → results/appendix/robustness_meta_regression.tex\n")
 #   nw_pval   — Newey-West HAC (lag 5)
 #
 # State-level specs and VAR/Granger specs don't carry hc3_pval / nw_pval
-# (they use different SE machinery: feols TWFE clustering and bootstrap-based
+# (they use different SE machinery: feols TWFE clustering and asymptotic
 # Granger F-tests respectively). Those rows show NA for the system-only
 # columns and the % calculations use na.rm = TRUE so they reflect only the
 # system-level subsamples.
@@ -3512,7 +4136,7 @@ tex_sc <- c(
 )
 for (i in seq_len(nrow(spec_summary))) {
   r <- spec_summary[i, ]
-  dv_lab <- ifelse(r$dv %in% names(dv_labels), dv_labels[r$dv], r$dv)
+  dv_lab <- ifelse(r$dv %in% names(dv_labels), dv_labels[r$dv], gsub("_", "\\\\_", r$dv))
   tex_sc <- c(tex_sc, sprintf(
     "%s & %s & %s & %.4f & %.4f & %.4f & %.1f & %.1f & %.1f & %.1f & %.1f & %.1f & %.1f \\\\",
     str_to_title(r$level), dv_lab, format(r$N, big.mark = ","),
@@ -3524,7 +4148,7 @@ for (i in seq_len(nrow(spec_summary))) {
 }
 tex_sc <- c(tex_sc, "\\bottomrule", "\\end{tabular}",
   "\\begin{tablenotes}\\small",
-  "\\item Significance assessed using one-sided tests ($p/2 < 0.10$) given the directional hypothesis that conflict increases network reconfiguration. iid: conventional OLS standard errors. HC3: heteroskedasticity-robust (jackknife-style; Long-Ervin 2000 recommend for $N < 250$). NW: Newey-West HAC with bandwidth 5. FDR adj.: Benjamini-Hochberg adjustment applied within each (level, DV) cell. State-level and VAR/Granger specifications use cluster-robust or bootstrap-based inference and contribute only the iid column; HC3 and NW columns reflect system-level OLS / LP specifications only.",
+  "\\item Significance assessed using one-sided tests ($p/2 < 0.10$) given the directional hypothesis that conflict increases network reconfiguration. iid: conventional OLS standard errors. HC3: heteroskedasticity-robust (jackknife-style; Long-Ervin 2000 recommend for $N < 250$). NW: Newey-West HAC with bandwidth 5. FDR adj.: Benjamini-Hochberg adjustment applied within each (level, DV) cell. State-level specifications use cluster-robust inference and contribute only the iid column; Granger F-tests are excluded. HC3 and NW columns reflect system-level OLS / LP specifications only.",
   "\\end{tablenotes}",
   "\\end{table}")
 writeLines(tex_sc, file.path(APPX_DIR, "robustness_spec_curve_summary.tex"))
@@ -3557,7 +4181,7 @@ for (i in seq_len(nrow(granger_specs))) {
   r <- granger_specs[i, ]
   tex_gr <- c(tex_gr, sprintf(
     "%s & %s & %d & %.3f & %.4f & %.1f \\\\",
-    dir_labels[r$model], r$war_variable, r$N,
+    dir_labels[r$model], gsub("_", "\\\\_", r$war_variable), r$N,   # [2026-10-12] escape underscores
     r$Mean_Fstat, r$Mean_Pval, r$Pct_Sig
   ))
 }
@@ -3584,7 +4208,7 @@ if (length(fevd_horizon_data) > 0) {
     r <- fevd_h[i, ]
     tex_fh <- c(tex_fh, sprintf(
       "%s & %s & %d & %.2f \\\\",
-      r$war_variable, r$dv, r$horizon, r$war_share * 100
+      gsub("_", "\\\\_", r$war_variable), gsub("_", "\\\\_", r$dv), r$horizon, r$war_share * 100
     ))
   }
   tex_fh <- c(tex_fh, "\\bottomrule", "\\end{tabular}", "\\end{table}")
@@ -3606,7 +4230,7 @@ cat("\n========== System OLS SE-ladder appendix table ==========\n")
 
 # Headline cell: log_kl_divergence DV, raw transform, unweighted method,
 # layers = the 3 main-spec layers (offensive + defensive + igo).
-HEADLINE_LAYERS <- "offensive+defensive+igo"
+HEADLINE_LAYERS <- "defensive+igo+offensive"   # [2026-10-13] combo names are alphabetical (was never matched)
 
 hac_appendix_rows <- specs_df |>
   filter(level == "system",
@@ -3687,13 +4311,13 @@ if (nrow(hac_appendix_rows) > 0) {
 #                                      share supporting each hypothesis.
 #   fig_multiverse_meta_by_hyp.png  -- coefficient plot: how each design choice
 #                                      shifts the downstream estimate, faceted
-#                                      across H1 / H2 / H3 (free scales).
+#                                      across H1 / H2 (free scales).
 #
 # Conventions:
 #   * Significance = ONE-SIDED POSITIVE at p < 0.10  (coef > 0 & pval/2 < 0.10).
 #   * DCA is dropped: there are NO DCA specs in the 07 multiverse (has_dca is
 #     always FALSE), which was the source of the NA cell in the earlier figure.
-#   * H1 = system; H2 = state, own conflict; H3 = state, partner exposure.
+#   * H1 = system; H2 = state, own conflict. (H3, partner exposure, removed 2026-10-12.)
 ###############################################################################
 
 library(tidyverse)
@@ -3715,23 +4339,21 @@ specs <- specs |> mutate(across(any_of(bool_cols), ~ as.logical(.x)))
 # ===========================================================================
 # 1. Classify specs into hypotheses; flag one-sided positive significance
 # ===========================================================================
-PARTNER <- c("partner_war_frac", "partner_war_frac_weighted",
-             "partner_fatal_war_frac", "partner_fatal_war_frac_weighted")
-
 specs <- specs |>
   filter(!str_starts(model, "VAR_")) |>           # drop VAR / Granger / FEVD cells
   filter(!is.na(coef), !is.na(pval)) |>
+  filter(dplyr::coalesce(extra_control, "none") == "none") |>   # [2026-10-13] baseline rows only
+
   mutate(
     hypothesis = case_when(
       level == "system"                            ~ "H1",
-      level == "state" & war_variable %in% PARTNER ~ "H3",
       level == "state"                             ~ "H2"
     ),
     sig_pos = coef > 0 & (pval / 2) < 0.10          # one-sided positive, p < 0.10
   ) |>
   filter(!is.na(hypothesis))
 
-HYP <- c("H1", "H2", "H3")
+HYP <- c("H1", "H2")
 
 # ===========================================================================
 # 2. Readable labels for each decision value
@@ -3889,7 +4511,7 @@ cat("  -> fig_multiverse_hypotheses.png\n")
 
 # ===========================================================================
 # 5. Coefficient plot: how each decision shifts the downstream estimate,
-#    faceted across H1 / H2 / H3 (free scales).
+#    faceted across H1 / H2 (free scales).
 #    Outcome = the spec's coefficient, z-scored WITHIN hypothesis, so the
 #    meta-regression coefficients read as SD-unit shifts in the downstream
 #    estimate and are comparable within each facet.
@@ -3912,9 +4534,9 @@ meta_df <- specs |>
 
 # Reference = the MAIN specification for each hypothesis, so the intercept IS the
 # main model and every coefficient reads as a deviation from it:
-#   H1 (system) : OLS_lagged, JS divergence, raw, unweighted, main layers, All MIDs
-#   H2/H3 (state): FE_full_ccode_year (state+year TWFE = "model 4"), Churn, raw,
-#                  unweighted, main layers, All MIDs
+#   H1 (system) : OLS_lagged, JS divergence, raw, unweighted, main layers, Fatal MIDs
+#   H2 (state): FE_full_ccode_year (state+year TWFE, main-text Table 3 column 3; IV at t-1), Churn, raw,
+#                  unweighted, main layers, Fatal MIDs   [2026-10-12: reference switched to fatal MIDs]
 relevel_to <- function(x, ref) {
   x <- droplevels(factor(x))
   if (ref %in% levels(x)) relevel(x, ref = ref) else x
@@ -3937,8 +4559,9 @@ run_meta <- function(df, hyp) {
     model_f   = relevel_to(model, ref_model),
     transform = relevel_to(transform, "raw"),
     weighting = relevel_to(weighting, "unweighted"),
-    conflict  = relevel_to(conflict, "All MIDs"),
-    recon     = relevel_to(recon, ref_measure)
+    conflict  = relevel_to(conflict, "Fatal MIDs"),   # [2026-10-12] main text reports fatal MIDs only
+    recon     = relevel_to(recon, ref_measure),
+    extra_ctl = relevel_to(dplyr::coalesce(extra_control, "none"), "none")   # [2026-10-13]
   )
   # Keep only predictors that actually vary within this hypothesis.
   keep <- function(nm, x) if (length(unique(x[!is.na(x)])) > 1) nm else NULL
@@ -3947,7 +4570,8 @@ run_meta <- function(df, hyp) {
              keep("conflict", df$conflict), keep("recon", df$recon),
              keep("drop_offensive", df$drop_offensive),
              keep("drop_defensive", df$drop_defensive),
-             keep("drop_igo", df$drop_igo), keep("add_trade", df$add_trade))
+             keep("drop_igo", df$drop_igo), keep("add_trade", df$add_trade),
+             keep("extra_ctl", df$extra_ctl))   # [2026-10-13]
   rhs <- paste(preds, collapse = " + ")
   
   # THREE downstream outcomes, same predictors, same main-spec baseline:
@@ -3987,11 +4611,13 @@ clean_term <- function(t) dplyr::case_when(
   t == "weightingdist_manhattan"   ~ "Weight: Distance (Manhattan)",
   t == "weightingdist_euclidean"   ~ "Weight: Distance (Euclidean)",
   t == "conflictFatal MIDs"        ~ "Conflict: Fatal MIDs",
+  t == "conflictAll MIDs"          ~ "Conflict: All MIDs",   # [2026-10-12] reference is now Fatal MIDs
   t == "drop_offensiveTRUE"        ~ "Drop offensive alliances",
   t == "drop_defensiveTRUE"        ~ "Drop defensive alliances",
   t == "drop_igoTRUE"              ~ "Drop shared IGOs",
   t == "add_tradeTRUE"             ~ "Add trade",
   str_starts(t, "recon")           ~ paste0("Measure: ", str_remove(t, "^recon")),
+  str_starts(t, "extra_ctl")       ~ paste0("Extra control: ", str_remove(t, "^extra_ctl")),
   TRUE ~ t
 )
 
@@ -4030,7 +4656,7 @@ p_fig2 <- ggplot(meta_coef, aes(x = estimate, y = term_clean)) +
   labs(title = "How each measurement decision affects the downstream analyses",
        subtitle = paste0("Meta-regressions of the estimate, its significance (-log10 p), ",
                          "and P(significant-positive) on design choices,\nrelative to the ",
-                         "MAIN specification (H1: OLS lagged-DV; H2/H3: state+year TWFE). ",
+                         "MAIN specification (H1: OLS lagged-DV; H2: state+year TWFE). ",
                          "Rows = hypotheses; columns = outcomes (free x)."),
        x = "Effect vs. main specification", y = NULL) +
   theme_bw(base_size = 10) +

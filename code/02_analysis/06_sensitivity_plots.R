@@ -61,25 +61,24 @@ lvl_factor <- function(x) factor(if_else(x == "system", "System level", "State l
 # ===========================================================================
 cat("(1) Placebo plot...\n")
 
-# Panels are labeled by HYPOTHESIS and ordered H1 -> H2 -> H3. Labels drop the
-# "log(1 + .)" wrapper (noted in the text instead).
-hyp_levels <- c("H1: Systemic MID Count",
-                "H2: State MID Onset",
-                "H3: State Partner War Exposure")
+# Panels are labeled by HYPOTHESIS and ordered H1 -> H2. Labels drop the
+# "log(1 + .)" wrapper (noted in the text instead). [2026-10-12] H3 (partner war exposure) removed.
+hyp_levels <- c("H1: Systemic fatal MID count (t-1)",
+                "H2: State fatal MID onset (t-1)")
 
 placebo <- read_csv(file.path(DATA_DIR, "robustness_placebo_reverse_timing.csv"),
                     show_col_types = FALSE) |>
   mutate(
     panel = case_when(
-      term == "log_mid_count_lag1"        ~ "H1: Systemic MID Count",
-      term == "log_mid_onset_count"       ~ "H2: State MID Onset",
-      term == "partner_war_frac_weighted" ~ "H3: State Partner War Exposure",
+      term == "log_fatal_mid_count_lag1"  ~ "H1: Systemic fatal MID count (t-1)",
+      term == "log_fatal_onset_lag1"      ~ "H2: State fatal MID onset (t-1)",
       TRUE                                ~ NA_character_
     ),
     panel = factor(panel, levels = hyp_levels),
-    horizon_lab = factor(if_else(horizon == 0, "t", paste0("t+", horizon)),
-                         levels = c("t", "t+1", "t+3", "t+5", "t+10")),
-    kind = if_else(horizon == 0, "Observed (t)", "Placebo (future)")
+    # [2026-10-12] the observed (horizon 0) estimate is the fatal t-1 focal IV at both levels
+    horizon_lab = factor(if_else(horizon == 0, "t-1", paste0("t+", horizon)),
+                         levels = c("t-1", "t+1", "t+3", "t+5", "t+10")),
+    kind = if_else(horizon == 0, "Observed (t-1)", "Placebo (future)")
   ) |>
   filter(!is.na(panel))
 
@@ -87,9 +86,9 @@ p1 <- ggplot(placebo, aes(x = horizon_lab, y = estimate, color = kind)) +
   geom_hline(yintercept = 0, linetype = "dashed", color = GREY) +
   geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.15, linewidth = 0.7) +
   geom_point(size = 2.6) +
-  scale_color_manual(values = c("Observed (t)" = ACCENT, "Placebo (future)" = GREY),
+  scale_color_manual(values = c("Observed (t-1)" = ACCENT, "Placebo (future)" = GREY),
                      name = NULL) +
-  facet_wrap(~ panel, scales = "free_y", ncol = 3) +
+  facet_wrap(~ panel, scales = "free_y", ncol = 2) +
   labs(
     title = "Reverse-timing placebo tests",
     subtitle = "Observed conflict effect vs. future placebo leads; future leads should be null.",
@@ -97,7 +96,7 @@ p1 <- ggplot(placebo, aes(x = horizon_lab, y = estimate, color = kind)) +
   ) +
   theme_sens()
 
-save_fig("fig_sens_placebo.png", p1, width = 10, height = 4.5)
+save_fig("fig_sens_placebo.png", p1, width = 7.5, height = 4.5)
 
 # ===========================================================================
 # (2) Permutation null distribution + observed value
@@ -108,9 +107,8 @@ perm <- read_csv(file.path(DATA_DIR, "robustness_placebo_permutation.csv"),
                  show_col_types = FALSE) |>
   mutate(level_label = lvl_factor(level))
 
-# Observed coefficient = reverse-timing estimate at horizon 0 (IV at t).
-# Join on level AND term: the placebo file now carries TWO state IVs (MID onset
-# and partner war exposure), so joining on level alone would duplicate rows.
+# Observed coefficient = reverse-timing estimate at horizon 0 (the focal IV, at t-1).
+# Join on level AND term so the join stays one-to-one if more IVs are added.
 # The permutation test only covers MID onset (state) and MID count (system).
 observed <- placebo |>
   filter(horizon == 0) |>
@@ -157,7 +155,7 @@ med <- read_csv(file.path(DATA_DIR, "robustness_altmech_mediation.csv"),
 # Exclude battle deaths; restrict to the log focal IVs if the column is present.
 med <- med |> filter(!grepl("batdeath", mediator, ignore.case = TRUE))
 if ("iv" %in% names(med)) {
-  log_ivs <- c("log_mid_onset_count", "log_mid_count_lag1")
+  log_ivs <- c("log_fatal_onset_lag1", "log_fatal_mid_count_lag1")
   if (any(med$iv %in% log_ivs)) med <- med |> filter(iv %in% log_ivs)
 }
 stopifnot("indirect_ci_low"  %in% names(med),
@@ -220,18 +218,40 @@ P_COL <- "pval"
 
 specs <- read_csv(file.path(DATA_DIR, "robustness_specifications.csv"),
                   col_select = c(level, war_variable, coef, dv, weighting,
-                                 transform, iv_is_fatal,
+                                 transform, iv_is_fatal, model,
                                  has_offensive, has_defensive,
                                  has_igo, has_trade, has_dca,
+                                 any_of("extra_control"),
                                  all_of(P_COL)),
                   show_col_types = FALSE) |>
   rename(pval = all_of(P_COL)) |>
+  # [2026-10-12] VAR Granger rows carry F-statistics (and the reverse test is Network -> Conflict); they are
+  # not conflict coefficients, so they are excluded here exactly as in 07's hypothesis figures.
+  filter(!grepl("^VAR_", model)) |>
   filter(!is.na(pval), !is.na(coef))
+
+# [2026-10-13] Extra controls (GDP, strength, spillover, community spillover) are run only on FE_full x two IVs x
+# four churn DVs, so pooling them would overweight those cells (about a third of state rows). The hypothesis
+# shares and figures use the baseline rows (extra_control == "none"); each control's share is printed
+# separately on the cells where it is estimated (07 also writes robustness_extra_control_shares.csv).
+if (!"extra_control" %in% names(specs)) specs$extra_control <- "none"
+specs <- specs |> mutate(extra_control = coalesce(extra_control, "none"))
+extra_ivs <- unique(specs$war_variable[specs$level == "state" & specs$extra_control != "none"])   # IVs with a control arm
+extra_cells <- specs |>
+  filter(level == "state", grepl("^FE_full_", model), war_variable %in% extra_ivs)
+if (n_distinct(extra_cells$extra_control) > 1) {
+  cat("  State H2 share significant-positive (one-sided p < 0.1) by extra control, on the cells where controls run:\n")
+  print(extra_cells |>
+          group_by(extra_control) |>
+          summarise(n = n(), pct_sig_pos = 100 * mean(coef > 0 & pval / 2 < 0.1), .groups = "drop"),
+        n = Inf)
+}
+specs <- specs |> filter(extra_control == "none")
 
 # The three hypotheses. Each POOLS the conflict-measure variants that the
 # multiverse varies (MID vs fatal MID; raw vs logged; unweighted vs weighted),
 # which is measurement decision (d) in the manuscript. This reproduces the
-# reported figures exactly: H1 = 59.9%, H2 = 80.9%, H3 = 76.0%.
+# reported figures. [2026-10-12] H3 (partner war exposure) removed; the multiverse no longer contains it.
 measure_map <- tibble::tribble(
   ~level,   ~war_variable,                     ~hyp,
   # H1 — systemic conflict
@@ -243,19 +263,13 @@ measure_map <- tibble::tribble(
   "state",  "mid_onset_count",                 "H2: State MID Onset",
   "state",  "log_mid_onset_count",             "H2: State MID Onset",
   "state",  "fatal_mid_onset_count",           "H2: State MID Onset",
-  "state",  "log_fatal_mid_onset_count",       "H2: State MID Onset",
-  # H3 — partner war exposure
-  "state",  "partner_war_frac",                "H3: State Partner War Exposure",
-  "state",  "partner_war_frac_weighted",       "H3: State Partner War Exposure",
-  "state",  "partner_fatal_war_frac",          "H3: State Partner War Exposure",
-  "state",  "partner_fatal_war_frac_weighted", "H3: State Partner War Exposure"
+  "state",  "log_fatal_mid_onset_count",       "H2: State MID Onset"
 )
 # unique(): measure_map now has 4 IV variants per hypothesis, so the hyp column
 # repeats each label four times. factor(levels = ) rejects duplicates.
 hyp_levels  <- unique(measure_map$hyp)
 hyp_short   <- c("H1: Systemic MID Count" = "H1",
-                 "H2: State MID Onset" = "H2",
-                 "H3: State Partner War Exposure" = "H3")
+                 "H2: State MID Onset" = "H2")
 
 # Significance rule: ONE-SIDED test at the 0.1 level.
 #   BLUE = supports the theory (positive AND significant)
@@ -345,7 +359,7 @@ hm <- hm |>
   summarise(pct = 100 * mean(sig_pos), n = n(), .groups = "drop") |>
   # Complete the grid so structurally inapplicable cells become explicit NAs
   # rather than blank gaps. The reconfiguration measures are LEVEL-SPECIFIC:
-  # churn exists only at the state level (H2, H3); the divergence measures only
+  # churn exists only at the state level (H2); the divergence measures only
   # at the system level (H1). Those cells are "not applicable", not "missing",
   # and are drawn in grey with an em dash.
   tidyr::complete(hyp_s, tidyr::nesting(feature, lvl)) |>
