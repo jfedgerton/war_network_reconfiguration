@@ -1181,8 +1181,8 @@ cat("  tab:state_allmid_t -> results/appendix/tableA_state_allmid_t.tex (Panels 
 # =========================================================================== #
 # [2026-10-12] HEADLINE, main-text Table 3: log(1 + fatal MID onset) at t-1.
 #   Panel A: churn over all dyads. Panel B: churn over peace dyads (partners that were opponents in a
-#   fatal MID in t-1 dropped; churn_peace_ft1). Main text shows columns 1-4; the appendix shows columns
-#   3-5 (community FE) and the same table with log(1 + churn).
+#   fatal MID in t-1 dropped; churn_peace_ft1). Main text shows ladder columns 1, 2, 3 and 5 (5 = three-way FE,
+#   printed as column 4) [2026-10-13]; the appendix shows columns 3-5 and the same table with log(1 + churn).
 # =========================================================================== #
 HL_IV <- "log_fatal_onset_lag1"
 state_churn_peace_f <- state_churn |> filter(!is.na(churn_peace_ft1))
@@ -1231,29 +1231,29 @@ HL_DV_RAW <- "DV is churn, $1 - $ weighted Jaccard similarity of a state's ties 
 HL_COLS_14 <- paste0(
   "Columns (1)--(2) include a quadratic year trend and cluster SEs by state; column (2) adds the controls and has no fixed effects. Columns (2) onward use the state-years with non-missing controls (democracy and autocracy come from Polity), hence the smaller N. ",
   "Column (3) adds state and year fixed effects with SEs clustered by state and year. ",
-  "Column (4) keeps column (3) and clusters SEs by state, year and two-stage multilayer community ",
-  "(Leiden CPM within year, Jaccard-tracked across years). ",
-  "Community fixed effects are in Appendix Table~\\ref{tab:state_main_comm}. ")
+  "Column (4) adds the two-stage multilayer community (Leiden CPM within year, Jaccard-tracked across years) ",
+  "as a third fixed effect and clusters SEs by state, year and community; state-years that are singletons within a fixed effect are dropped. ",
+  "Community-clustered SEs without community fixed effects are in Appendix Table~\\ref{tab:state_main_comm}. ")
 hl_tex <- c(
   "\\begin{table}[p]", "\\scriptsize", "\\begin{center}", "\\begin{tabular}{l c c c c}", "\\toprule",
-  " & (1) IV + trend & (2) + Ctrls, no FE & (3) TWFE & (4) TWFE + Comm cluster \\\\", "\\midrule",
-  hl_body(hl_panels, 1:4, 5), "\\bottomrule", hl_note(5, HL_DV_RAW, HL_COLS_14),
+  " & (1) IV + trend & (2) + Ctrls, no FE & (3) TWFE & (4) 3-way FE \\\\", "\\midrule",
+  hl_body(hl_panels, c(1, 2, 3, 5), 5), "\\bottomrule", hl_note(5, HL_DV_RAW, HL_COLS_14),
   "\\end{tabular}", "\\end{center}",
   "\\caption{State-level regressions for fatal conflict and churn. Fatal MID onset in $t-1$, churn over all dyads (Panel A) and over peace dyads (Panel B).}",
   "\\label{tab:state_main}", "\\end{table}")
 hl_iv_rows <- hl_tex[grepl("^Log\\(1 \\+ fatal MID onset", hl_tex)]
 stopifnot(length(hl_iv_rows) == 2, all(lengths(regmatches(hl_iv_rows, gregexpr("&", hl_iv_rows))) == 4),
-          sum(grepl("^Num. groups: Communities", hl_tex)) == 0, !any(grepl("artner war|PWE", hl_tex)))
+          sum(grepl("^Num. groups: Communities", hl_tex)) == 2, !any(grepl("artner war|PWE", hl_tex)))
 writeLines(hl_tex, file.path(TABLE_DIR, "table3_state_main.tex"))
-cat("  tab:state_main -> table3_state_main.tex (fatal MID onset t-1; Panels A-B; columns 1-4)\n")
+cat("  tab:state_main -> table3_state_main.tex (fatal MID onset t-1; Panels A-B; ladder columns 1, 2, 3, 5)\n")
 
 hl_tex_comm <- c(
   "\\begin{table}[p]", "\\scriptsize", "\\begin{center}", "\\begin{tabular}{l c c c}", "\\toprule",
   " & (3) TWFE & (4) TWFE + Comm cluster & (5) 3-way FE \\\\", "\\midrule",
   hl_body(hl_panels, 3:5, 4), "\\bottomrule",
   hl_note(4, HL_DV_RAW, paste0("All columns include the controls and state and year fixed effects. ",
-                               "Columns (3)--(4) repeat main-text Table~\\ref{tab:state_main}. ",
-                               "Column (5) adds the community as a third fixed effect with three-way clustering; ",
+                               "Column (3) repeats main-text Table~\\ref{tab:state_main} column (3); column (4) keeps it and clusters SEs by state, year and community. ",
+                               "Column (5) adds the community as a third fixed effect with three-way clustering (main-text column 4); ",
                                "state-years that are singletons within a fixed effect are dropped. ")),
   "\\end{tabular}", "\\end{center}",
   "\\caption{Appendix. State-level regressions with community fixed effects, companion to main-text Table~\\ref{tab:state_main}.}",

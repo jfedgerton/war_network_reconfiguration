@@ -314,13 +314,15 @@ for (i in seq_len(nrow(ols_grid))) {
 # ----------------------------------------------------------------------- #
 cat("\n========== VAR / Granger / FEVD ==========\n")
 
-build_var_inputs <- function(set, controls, iv) {
+build_var_inputs <- function(set, controls, iv, dv = "js_divergence") {
+  stopifnot(dv %in% c("js_divergence", "js_divergence_peace_ft1"))
   endo_iv <- if (set == "logged") {
     if (iv == "mid") "log_mid_count" else "log_fatal_mid_count"
   } else {
     if (iv == "mid") "mid_count" else "fatal_mid_count"
   }
-  endo_dv <- "js_divergence"   # raw JS in both sets; "logged" now means logged conflict counts only [2026-10-01]
+  endo_dv <- dv   # raw JS in both sets; "logged" now means logged conflict counts only [2026-10-01]
+                  # [2026-10-14] dv = "js_divergence_peace_ft1" drops dyads in an ongoing fatal MID in t-1 (main-text Table 3, Panel B)
 
   cols_needed <- c(endo_iv, endo_dv)
   if (controls == "full") {
@@ -352,16 +354,24 @@ var_grid <- expand.grid(
   iv       = c("mid", "fatal"),
   stringsAsFactors = FALSE
 )
+var_grid$dv <- "js_divergence"
+# [2026-10-14] Main-text Table 3, Panel B: the same logged fatal-MID VARs with JS computed after dropping
+# dyads in an ongoing fatal MID in t-1 (the peace rule used in Table 2, Panel B).
+var_grid <- rbind(var_grid,
+                  data.frame(set = "logged", controls = c("none", "full"), iv = "fatal",
+                             dv = "js_divergence_peace_ft1", stringsAsFactors = FALSE))
+stopifnot(nrow(var_grid) == 10, !anyDuplicated(var_grid))
 
 for (i in seq_len(nrow(var_grid))) {
   spec <- var_grid[i, ]
-  key  <- sprintf("var__%s__%s__%s", spec$set, spec$controls, spec$iv)
+  key  <- sprintf("var__%s__%s__%s%s", spec$set, spec$controls, spec$iv,
+                  if (spec$dv == "js_divergence") "" else "__peacefatal")
 
   cat(sprintf("\n%s\n", strrep("=", 70)))
-  cat(sprintf("  VAR [%s | %s | %s]\n", spec$set, spec$controls, spec$iv))
+  cat(sprintf("  VAR [%s | %s | %s | %s]\n", spec$set, spec$controls, spec$iv, spec$dv))
   cat(sprintf("%s\n", strrep("=", 70)))
 
-  inp <- build_var_inputs(spec$set, spec$controls, spec$iv)
+  inp <- build_var_inputs(spec$set, spec$controls, spec$iv, spec$dv)
 
   optimal_lag <- tryCatch({
     sel_args <- list(y = inp$endo, lag.max = 10, type = "both")
@@ -922,60 +932,67 @@ star_fn <- function(p) {
 # Raw-scale variants from the legacy table are dropped; they remain
 # available in the underlying granger_results_combined.csv /
 # fevd_results_combined.csv files for any reader who wants them.
+# [2026-10-14] Rows for one outcome (all dyads, or belligerent dyads dropped): forward and reverse
+# Granger (bootstrap p) and FEVD at h = 1, 3, 5, 10, for the no-controls and full-controls VARs.
+gf_rows <- function(iv_family, suffix) {
+  out <- list(fwd_F = character(2), fwd_p = character(2), rev_F = character(2), rev_p = character(2),
+              h1 = character(2), h3 = character(2), h5 = character(2), h10 = character(2))
+  ctrls <- c("none", "full")
+  for (j in 1:2) {
+    key <- sprintf("var__logged__%s__%s%s", ctrls[j], iv_family, suffix)
+    g   <- granger_results_list[[key]]
+    fd  <- fevd_results_list[[key]]
+    stopifnot(!is.null(g), !is.null(fd), nrow(fd) >= 10)
+    fF <- as.numeric(g$fwd$Granger$statistic); fP <- as.numeric(g$fwd$Granger$p.value)
+    rF <- as.numeric(g$rev$Granger$statistic); rP <- as.numeric(g$rev$Granger$p.value)
+    out$fwd_F[j] <- sprintf("%.3f", fF)
+    out$fwd_p[j] <- if (!is.na(fP) && fP < 0.001) paste0("$<$0.001", star_fn(fP)) else sprintf("%.4f%s", fP, star_fn(fP))   # bootstrap p
+    out$rev_F[j] <- sprintf("%.3f", rF)
+    out$rev_p[j] <- if (!is.na(rP) && rP < 0.001) paste0("$<$0.001", star_fn(rP)) else sprintf("%.4f%s", rP, star_fn(rP))
+    out$h1[j]  <- sprintf("%.1f\\%%", fd[[g$endo_iv]][1]  * 100)
+    out$h3[j]  <- sprintf("%.1f\\%%", fd[[g$endo_iv]][3]  * 100)
+    out$h5[j]  <- sprintf("%.1f\\%%", fd[[g$endo_iv]][5]  * 100)
+    out$h10[j] <- sprintf("%.1f\\%%", fd[[g$endo_iv]][10] * 100)
+  }
+  out
+}
+gf_block <- function(r) c(
+  "\\multicolumn{3}{l}{\\quad Granger causality, conflict $\\rightarrow$ JS} \\\\",
+  paste0("\\quad $F$-statistic & ", paste(r$fwd_F, collapse = " & "), " \\\\"),
+  paste0("\\quad $p$-value & ",     paste(r$fwd_p, collapse = " & "), " \\\\[3pt]"),
+  "\\multicolumn{3}{l}{\\quad Granger causality, JS $\\rightarrow$ conflict} \\\\",
+  paste0("\\quad $F$-statistic & ", paste(r$rev_F, collapse = " & "), " \\\\"),
+  paste0("\\quad $p$-value & ",     paste(r$rev_p, collapse = " & "), " \\\\[3pt]"),
+  "\\multicolumn{3}{l}{\\quad FEVD, \\% of JS variance from conflict shocks} \\\\",
+  paste0("\\quad $h = 1$ & ",  paste(r$h1,  collapse = " & "), " \\\\"),
+  paste0("\\quad $h = 3$ & ",  paste(r$h3,  collapse = " & "), " \\\\"),
+  paste0("\\quad $h = 5$ & ",  paste(r$h5,  collapse = " & "), " \\\\"),
+  paste0("\\quad $h = 10$ & ", paste(r$h10, collapse = " & "), " \\\\"))
+
 write_granger_fevd_by_iv <- function(iv_family, file_path, table_dir_label) {
   stopifnot(iv_family %in% c("mid", "fatal"))
-  col_specs <- list(
-    list(controls = "none"),
-    list(controls = "full")
-  )
+  iv_short <- if (iv_family == "mid") "$\\log(1{+}\\text{MID})$" else "$\\log(1{+}\\text{Fatal MID})$"
+  col_headers <- c(paste0(iv_short, ", no ctrls"), paste0(iv_short, ", full ctrls"))
 
-  iv_short <- if (iv_family == "mid")
-    "$\\log(1{+}\\text{MID})$"
-  else
-    "$\\log(1{+}\\text{Fatal MID})$"
-
-  col_headers <- vapply(col_specs, function(s) {
-    sprintf("%s, %s", iv_short,
-            ifelse(s$controls == "none", "no ctrls", "full ctrls"))
-  }, character(1))
-
-  fwd_F  <- fwd_p  <- rev_F  <- rev_p  <- character(length(col_specs))
-  fevd_h <- list(h1 = character(length(col_specs)),
-                  h3 = character(length(col_specs)),
-                  h5 = character(length(col_specs)),
-                  h10 = character(length(col_specs)))
-
-  for (j in seq_along(col_specs)) {
-    s   <- col_specs[[j]]
-    key <- sprintf("var__logged__%s__%s", s$controls, iv_family)
-    g   <- granger_results_list[[key]]
-    fF  <- as.numeric(g$fwd$Granger$statistic)
-    fP  <- as.numeric(g$fwd$Granger$p.value)
-    rF  <- as.numeric(g$rev$Granger$statistic)
-    rP  <- as.numeric(g$rev$Granger$p.value)
-    fwd_F[j] <- sprintf("%.3f", fF)
-    fwd_p[j] <- if (!is.na(fP) && fP < 0.001) paste0("$<$0.001", star_fn(fP)) else sprintf("%.4f%s", fP, star_fn(fP))   # [2026-10-12] bootstrap p
-    rev_F[j] <- sprintf("%.3f", rF)
-    rev_p[j] <- if (!is.na(rP) && rP < 0.001) paste0("$<$0.001", star_fn(rP)) else sprintf("%.4f%s", rP, star_fn(rP))
-
-    fd <- fevd_results_list[[key]]
-    fevd_h$h1[j]  <- sprintf("%.1f\\%%", fd[[g$endo_iv]][1]  * 100)
-    fevd_h$h3[j]  <- sprintf("%.1f\\%%", fd[[g$endo_iv]][3]  * 100)
-    fevd_h$h5[j]  <- sprintf("%.1f\\%%", fd[[g$endo_iv]][5]  * 100)
-    fevd_h$h10[j] <- sprintf("%.1f\\%%", fd[[g$endo_iv]][10] * 100)
+  if (iv_family == "fatal") {
+    # main text: Panel A all dyads, Panel B dyads in an ongoing fatal MID in t-1 dropped
+    body <- c("\\multicolumn{3}{l}{\\textit{Panel A. JS divergence over all dyads}} \\\\[3pt]",
+              gf_block(gf_rows("fatal", "")),
+              "\\midrule",
+              "\\multicolumn{3}{l}{\\textit{Panel B. JS divergence over peace dyads (dyads in an ongoing fatal MID in $t-1$ dropped)}} \\\\[3pt]",
+              gf_block(gf_rows("fatal", "__peacefatal")))
+    caption_lead <- paste0("Granger causality and FEVD: $\\log(1+\\text{Fatal MID Count})$ and JS divergence, ",
+                           "over all dyads (Panel A) and over peace dyads (Panel B).")
+    panel_note <- paste0("Panel B computes JS after dropping, from both years, every dyad that was in an ongoing fatal MID in $t-1$, ",
+                         "as in Table~\\ref{tab:system_main}, Panel B. ")
+  } else {
+    body <- c("\\multicolumn{3}{l}{\\textit{JS divergence over all dyads}} \\\\[3pt]",
+              gf_block(gf_rows("mid", "")))
+    caption_lead <- paste0("Appendix. Granger causality and FEVD: $\\log(1+\\text{MID Count})$ and JS divergence. ",
+                           "Companion to main-text Table~\\ref{tab:granger_fevd_fatal}.")
+    panel_note <- ""
   }
-
-  # [2026-10-12] fatal MIDs are the headline (main text); all MIDs are the appendix companion.
-  caption_lead <- if (iv_family == "fatal")
-    paste0("Granger Causality and FEVD: $\\log(1+\\text{Fatal MID Count})$ ",
-           "and JS divergence. ",
-           "VAR with the conflict count logged and JS unlogged (mirrors the ",
-           "main-text Table~\\ref{tab:system_main} anchoring).")
-  else
-    paste0("Appendix. Granger Causality and FEVD: ",
-           "$\\log(1+\\text{MID Count})$ and ",
-           "JS divergence. ",
-           "Companion to main-text Table~\\ref{tab:granger_fevd_fatal}.")
+  stopifnot(sum(grepl("F\\$-statistic", body)) == if (iv_family == "fatal") 4 else 2)
 
   tex_lines <- c(
     "\\begin{table}[htbp]",
@@ -986,31 +1003,22 @@ write_granger_fevd_by_iv <- function(iv_family, file_path, table_dir_label) {
     "\\toprule",
     paste0(" & ", paste(col_headers, collapse = " & "), " \\\\"),
     "\\midrule",
-    "\\multicolumn{3}{l}{\\textit{Panel A: Granger Causality (Conflict $\\rightarrow$ JS)}} \\\\[3pt]",
-    paste0("$F$-statistic & ", paste(fwd_F, collapse = " & "), " \\\\"),
-    paste0("$p$-value & ",     paste(fwd_p, collapse = " & "), " \\\\[6pt]"),
-    "\\multicolumn{3}{l}{\\textit{Panel B: Granger Causality (JS $\\rightarrow$ Conflict)}} \\\\[3pt]",
-    paste0("$F$-statistic & ", paste(rev_F, collapse = " & "), " \\\\"),
-    paste0("$p$-value & ",     paste(rev_p, collapse = " & "), " \\\\[6pt]"),
-    "\\multicolumn{3}{l}{\\textit{Panel C: FEVD --- \\% of JS divergence variance from conflict shocks}} \\\\[3pt]",
-    paste0("$h = 1$ & ",  paste(fevd_h$h1,  collapse = " & "), " \\\\"),
-    paste0("$h = 3$ & ",  paste(fevd_h$h3,  collapse = " & "), " \\\\"),
-    paste0("$h = 5$ & ",  paste(fevd_h$h5,  collapse = " & "), " \\\\"),
-    paste0("$h = 10$ & ", paste(fevd_h$h10, collapse = " & "), " \\\\"),
+    body,
     "\\bottomrule",
     "\\end{tabular}",
     "\\par\\vspace{4pt}",
     paste0(
       "{\\footnotesize \\textit{Note:} Granger tests from VAR with ",
-      "AIC-selected lag order and 1,000 bootstrap replications. ",
+      "AIC-selected lag order (chosen separately for each VAR) and 1,000 bootstrap replications. ",
       "Endogenous variables are JS divergence (not logged) and ",
       iv_short, ", to match the ",
       if (iv_family == "fatal") "main-text Table~\\ref{tab:system_main}" else "Appendix Table~\\ref{tab:system_allmid}",
-      " anchoring. ``no ctrls'' VARs include only ",
+      " anchoring. ", panel_note,
+      "``no ctrls'' VARs include only ",
       "constant and trend; ``full ctrls'' VARs additionally include ",
       "exogenous $\\log(1+\\text{Democracies})$, ",
-      "$\\log(1+\\text{Autocracies})$, $\\log(1+\\text{States})$. Panel C ",
-      "reports the share of forecast variance in JS divergence ",
+      "$\\log(1+\\text{Autocracies})$, $\\log(1+\\text{States})$. The FEVD rows ",
+      "report the share of forecast variance in JS divergence ",
       "attributable to conflict shocks at horizons $h = 1, 3, 5, 10$ years. ",
       "Raw-scale variants reported in the underlying ",
       "\\texttt{granger\\_results\\_combined.csv} and ",
