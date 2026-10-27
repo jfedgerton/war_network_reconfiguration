@@ -630,22 +630,23 @@ p_tie <- ggplot(fs_plot, aes(x = beta, y = row, color = family)) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray55") +
   geom_linerange(aes(xmin = ci95_low, xmax = ci95_high), linewidth = 0.5) +
   geom_linerange(aes(xmin = ci90_low, xmax = ci90_high), linewidth = 1.6) +
-  geom_point(size = 2.3) +
+  geom_point(size = 3.6) +
   facet_wrap(~ layer, ncol = 3, scales = "free_x") +
   scale_color_manual(values = FAMILY_COLORS, name = NULL) +
-  scale_x_continuous(expand = expansion(mult = 0.12)) +
+  scale_x_continuous(n.breaks = 4, expand = expansion(mult = 0.12)) +
   scale_y_discrete(expand = expansion(add = 0.5)) +
   labs(subtitle = "Step 1: Prior conflict reshapes the tie — benchmarks do not",
        x = "Coefficient on tie strength (per SD)", y = NULL) +
-  theme_bw(base_size = 11) +
+  theme_bw(base_size = 18) +   # [2026-10-27] larger text throughout (figure is set at 0.9 linewidth)
   theme(panel.grid.minor = element_blank(),
-        panel.grid.major.y = element_blank(),
+        panel.grid.major.y = element_blank(), panel.spacing.x = unit(1.6, "lines"),   # keep edge tick labels apart
         strip.background = element_rect(fill = "gray92", color = "gray70"),
-        strip.text = element_text(face = "bold"),
-        axis.text.x = element_text(angle = 0, hjust = 0.5),
-        axis.text.y = element_text(size = 8, lineheight = 0.9),
+        strip.text = element_text(face = "bold", size = 20),
+        axis.text.x = element_text(angle = 0, hjust = 0.5, size = 16, color = "black"),
+        axis.title.x = element_text(size = 20),
+        axis.text.y = element_text(size = 17, lineheight = 0.9, color = "black"),
         legend.position = "none",
-        plot.subtitle = element_text(face = "bold", size = 11))
+        plot.subtitle = element_text(face = "bold", size = 22))
 
 # --- Panel B: the attenuation ladder + benchmark reference rungs ------------
 plot_df <- res |>
@@ -658,7 +659,7 @@ plot_df <- res |>
 # explicit: conflict moves the estimate, benchmarks barely do.
 lab_df <- plot_df |>
   filter(model != labs[1]) |>
-  mutate(txt = sprintf("%.2f%% %s", round(attenuation, 2),
+  mutate(txt = sprintf("%.2f%% %s", abs(round(attenuation, 2)),   # [2026-10-27] the word carries the direction, so no minus sign
                        if_else(attenuation >= 0, "attenuation", "amplification")))
 
 # Per-facet reference line at the BASELINE coefficient (labs[1]). Each rung's
@@ -675,27 +676,29 @@ p_att <- ggplot(plot_df, aes(x = beta, y = model, color = family)) +
              linetype = "dashed", color = "gray45", linewidth = 0.6) +
   geom_linerange(aes(xmin = ci95_low, xmax = ci95_high), linewidth = 0.5) +
   geom_linerange(aes(xmin = ci90_low, xmax = ci90_high), linewidth = 1.6) +
-  geom_point(size = 2.4) +
-  geom_text(data = lab_df, aes(x = beta, y = model, label = txt),
-            hjust = 0.5, vjust = -1.6, size = 2.9, color = "gray25",
-            inherit.aes = FALSE, show.legend = FALSE) +
+  geom_point(size = 3.6) +
+  geom_label(data = lab_df, aes(x = beta, y = model, label = txt),   # white box: label does not sit on the reference lines
+             hjust = 0.5, vjust = -0.35, size = 6, color = "black", fill = "white",   # sits just above its own rung
+             label.size = 0, label.padding = unit(1, "pt"),
+             inherit.aes = FALSE, show.legend = FALSE) +
   facet_wrap(~ layer, ncol = 3, scales = "free_x") +
   scale_color_manual(values = FAMILY_COLORS, name = NULL) +
   scale_x_continuous(labels = scales::label_number(accuracy = 1e-4,
                                                    drop0trailing = TRUE),
-                     expand = expansion(mult = 0.12)) +
+                     n.breaks = 4, expand = expansion(mult = 0.3)) +   # room for the % labels
   scale_y_discrete(expand = expansion(add = 0.5)) +
   labs(subtitle = "Step 2: So the tie-conflict estimate moves",
        x = "Coefficient on network tie (per SD)", y = NULL) +
-  theme_bw(base_size = 11) +
+  theme_bw(base_size = 18) +   # [2026-10-27] larger text throughout (figure is set at 0.9 linewidth)
   theme(panel.grid.minor = element_blank(),
-        panel.grid.major.y = element_blank(),
+        panel.grid.major.y = element_blank(), panel.spacing.x = unit(1.6, "lines"),   # keep edge tick labels apart
         strip.background = element_rect(fill = "gray92", color = "gray70"),
-        strip.text = element_text(face = "bold"),
-        axis.text.x = element_text(angle = 0, hjust = 0.5),
-        axis.text.y = element_text(size = 8, lineheight = 0.9),
-        legend.position = "bottom",
-        plot.subtitle = element_text(face = "bold", size = 11))
+        strip.text = element_text(face = "bold", size = 20),
+        axis.text.x = element_text(angle = 0, hjust = 0.5, size = 16, color = "black"),
+        axis.title.x = element_text(size = 20),
+        axis.text.y = element_text(size = 17, lineheight = 0.9, color = "black"),
+        legend.position = "bottom", legend.text = element_text(size = 19),
+        plot.subtitle = element_text(face = "bold", size = 22))
 
 # --- Assemble and export --------------------------------------------------
 p_full <- (p_tie / p_att) +
@@ -706,12 +709,12 @@ p_full <- (p_tie / p_att) +
       "strictly prior to the tie at t-1.\n",
       "Capability and regime shifts are non-conflict benchmarks over the ",
       "same window.\nThick bar = 90% CI, thin bar = 95% CI."),
-    theme = theme(plot.title = element_text(face = "bold", size = 14),
-                  plot.subtitle = element_text(color = "gray30", size = 10))
+    theme = theme(plot.title = element_text(face = "bold", size = 26),
+                  plot.subtitle = element_text(color = "black", size = 19))
   )
 
 ggsave(file.path(FIG_DIR, "fig_contamination_ladder.png"), p_full,
-       width = 11, height = 9, dpi = 400, bg = "white")
+       width = 14, height = 14, dpi = 300, bg = "white")
 cat("  -> fig_contamination_ladder.png\n")
 
 # ===========================================================================

@@ -180,6 +180,8 @@ step("02_analysis", "01_system_level_analysis.R",
      "01 System level (OLS, VAR, Granger, FEVD)  -> Tables 1-3")
 step("02_analysis", "02_state_level_analysis.R",
      "02 State level (TWFE, panel LP)            -> Tables 1, 4; Figure 4")
+step("02_analysis", "31_table1_sumstats.R",
+     "31 Table 1 summary stats (all + peace dyads) -> Table 1")
 step("02_analysis", "03_contamination_demo.R",
      "03 Contamination ladder + tie equation     -> Figure 8")
 step("02_analysis", "04_robustness_placebos.R",

@@ -1234,16 +1234,42 @@ HL_COLS_14 <- paste0(
   "Column (4) adds the two-stage multilayer community (Leiden CPM within year, Jaccard-tracked across years) ",
   "as a third fixed effect and clusters SEs by state, year and community; state-years that are singletons within a fixed effect are dropped. ",
   "Community-clustered SEs without community fixed effects are in Appendix Table~\\ref{tab:state_main_comm}. ")
+# [2026-10-27] Main-text Table 3 as one 8-column table: (1)-(4) Panel A (all dyads), (5)-(8) Panel B (peace dyads),
+#   ladder columns 1, 2, 3, 5 in each panel. The log(1+x) transform is stated once in the note (superscript a).
+hl8_models <- c(hl_panels$A[c(1, 2, 3, 5)], hl_panels$B[c(1, 2, 3, 5)])
+stopifnot(length(hl8_models) == 8)
+hl8_body <- t3_panel(hl8_models, HL_IV)
+hl8_iv <- which(grepl("^Log\\(1 \\+ fatal MID onset\\) \\(\\$t\\{-\\}1\\$\\) &", hl8_body))
+stopifnot(length(hl8_iv) == 1)
+hl8_body[hl8_iv] <- sub("^Log\\(1 \\+ fatal MID onset\\) \\(\\$t\\{-\\}1\\$\\)", "Fatal MID Onset$_{t-1}^{a}$", hl8_body[hl8_iv])
+HL_COLS_8 <- paste0(
+  "Columns 1--2 and 5--6 include a quadratic year trend and cluster SEs by state; columns 2 and 6 add the controls and have no fixed effects. ",
+  "Columns 2--4 and 6--8 use the state-years with non-missing controls (democracy and autocracy come from Polity), hence the smaller N. ",
+  "Columns 3 and 7 add state and year fixed effects with SEs clustered by state and year. ",
+  "Columns 4 and 8 add the two-stage multilayer community (Leiden CPM within year, Jaccard-tracked across years) ",
+  "as a third fixed effect and cluster SEs by state, year and community; state-years that are singletons within a fixed effect are dropped. ",
+  "Community-clustered SEs without community fixed effects are in Appendix Table~\\ref{tab:state_main_comm}. ")
+hl8_note <- paste0(
+  "\\multicolumn{9}{l}{\\scriptsize{\\parbox{\\linewidth}{\\vspace{2pt}\\textit{Note:} ", HL_DV_RAW,
+  "Coefficients and standard errors are multiplied by 100. ",
+  "$^{a}$Entered as $\\log(1+x)$; the conflict measure is fatal MID onset in year $t-1$. ",
+  "Panel B drops from churn every partner that was the state's opponent in a fatal MID ongoing in $t-1$; ",
+  "state-years whose partners were all such opponents are undefined and excluded. ", HL_COLS_8,
+  "COW system, 1816--2014. ", hl_stars)
 hl_tex <- c(
-  "\\begin{table}[p]", "\\scriptsize", "\\begin{center}", "\\begin{tabular}{l c c c c}", "\\toprule",
-  " & (1) IV + trend & (2) + Ctrls, no FE & (3) TWFE & (4) 3-way FE \\\\", "\\midrule",
-  hl_body(hl_panels, c(1, 2, 3, 5), 5), "\\bottomrule", hl_note(5, HL_DV_RAW, HL_COLS_14),
-  "\\end{tabular}", "\\end{center}",
+  "\\begin{table}[p]", "\\scriptsize", "\\begin{center}", "\\setlength{\\tabcolsep}{4pt}",
+  "\\begin{tabular*}{\\linewidth}{@{\\extracolsep{\\fill}}l c c c c c c c c}", "\\toprule",
+  " & \\multicolumn{4}{c}{Panel A. Churn, all dyads} & \\multicolumn{4}{c}{Panel B. Churn, peace dyads} \\\\",
+  "\\cmidrule(lr){2-5}\\cmidrule(lr){6-9}",
+  " & (1) & (2) & (3) & (4) & (5) & (6) & (7) & (8) \\\\", "\\midrule",
+  hl8_body, "\\bottomrule", "\\end{tabular*}", "\\end{center}", "\\vspace{-8pt}",
+  sub("}}} \\\\", "\\par}", sub("\\multicolumn{9}{l}{\\scriptsize{\\parbox{\\linewidth}{\\vspace{2pt}", "{\\scriptsize ", hl8_note, fixed = TRUE), fixed = TRUE),
   "\\caption{State-level regressions for fatal conflict and churn. Fatal MID onset in $t-1$, churn over all dyads (Panel A) and over peace dyads (Panel B).}",
   "\\label{tab:state_main}", "\\end{table}")
-hl_iv_rows <- hl_tex[grepl("^Log\\(1 \\+ fatal MID onset", hl_tex)]
-stopifnot(length(hl_iv_rows) == 2, all(lengths(regmatches(hl_iv_rows, gregexpr("&", hl_iv_rows))) == 4),
-          sum(grepl("^Num. groups: Communities", hl_tex)) == 2, !any(grepl("artner war|PWE", hl_tex)))
+hl_iv_rows <- hl_tex[grepl("^Fatal MID Onset\\$_\\{t-1\\}\\^\\{a\\}\\$ &", hl_tex)]
+stopifnot(length(hl_iv_rows) == 1, all(lengths(regmatches(hl_iv_rows, gregexpr("&", hl_iv_rows))) == 8),
+          sum(grepl("^Num. groups: Communities", hl_tex)) == 1, !any(grepl("artner war|PWE", hl_tex)),
+          !any(grepl("^Log\\(1", hl_tex)))
 writeLines(hl_tex, file.path(TABLE_DIR, "table3_state_main.tex"))
 cat("  tab:state_main -> table3_state_main.tex (fatal MID onset t-1; Panels A-B; ladder columns 1, 2, 3, 5)\n")
 
