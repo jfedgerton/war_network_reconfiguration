@@ -26,7 +26,7 @@ run_all.R             master pipeline
 renv.lock             pinned R package versions
 ```
 
-The replication sweep of published studies (Stage 5 of `run_all.R`, off by default) is not included in this repository.
+The replication sweep of published studies is in `code/04_replication_sweep/` (Stage 5 of `run_all.R`, off by default; `RUN_STAGE5=TRUE` runs it). The authors' replication data are not redistributed: `code/04_replication_sweep/data_sources.csv` lists each source, and `01_fetch_data.R` downloads them into `data/raw/replication_sweep/`. The appendix sensitivity analyses run afterwards with `Rscript code/04_replication_sweep/run_sensitivity.R`.
 
 ## Running
 
@@ -45,16 +45,18 @@ Script notes:
 | `02_analysis/02` | State table (fatal MID onset, t−1), local projections | |
 | `02_analysis/03` | Contamination ladder | needs `peacesciencer::download_extdata()` |
 | `02_analysis/04–06` | Placebos, mediation, multiverse shares | |
-| `02_analysis/07` | Multiverse | layer combos x weightings x conflict measures x churn measures x models x belligerent-dyad rules x extra controls (GDP, strength, third-party war exposure, community war exposure); several hours |
+| `02_analysis/07` | Multiverse | layer combos x weightings x conflict measures x churn measures x models x belligerent-dyad rules x extra control (log GDP); several hours |
 | `02_analysis/10` | Random / sliding year drops | ~10 min |
 | `02_analysis/14` | IGO membership-share windows | needs `igoR` |
 | `02_analysis/23` | Wild cluster bootstrap | |
 | `02_analysis/24` | CINC without mobilization; pre/post-war windows | ~7 min (1,000 bootstrap draws) |
+| `02_analysis/32` | Multiverse permutation inference: reruns 07 on permuted conflict (500 draws, 3 fixed layer combos) and compares support shares with the observed draw | several hours; `RUN_MV_PERM=FALSE` skips |
 | `02_analysis/25–30` | Strength and GDP controls, non-participant KL, structural time series, out-of-sample prediction, winners and losers | |
 | `02_analysis/22` | Threshold / Markov-switching | needs `tsDyn`, `MSwM`; not in the manuscript |
 
 ## Change log
 
+- **2026-11-05.** Multiverse (07): the network-strength control (post-treatment) and the two third-party war-exposure controls removed; log GDP is the only extra control. Granger forward/reverse figure rebuilt by `03_figures/04_granger_forward_reverse.R`.
 - **2026-10-13.** Multiverse (07): third-party war-exposure controls (tie-weighted, actual ties at t−2, same-dispute partners excluded; community version), extra controls run on the headline cell, weighted x non-raw duplicate cells removed, state grid raw only, fit-status logging, per-control meta-regressions. 06 reports multiverse shares on baseline specifications.
 - **2026-10-12.** Headline state measure is fatal MID onset at t−1 (full COW universe); partner war exposure and H3 removed; peace-dyad panels; belligerent-dyad rule dimension and IV-timing x FE grid in 07; scripts 17 and 18 retired.
 - **2026-09-26.** Headline system-level DV switched from KL to JS divergence.

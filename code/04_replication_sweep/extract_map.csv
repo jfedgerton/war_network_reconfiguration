@@ -1,0 +1,326 @@
+row_id,id,key_term,out_file,row_filter,col_b0,col_p0,col_b_hist,col_p_hist,col_b_26,col_p_26,col_placebo_pct,col_jointdem_pct,col_n
+1,X087,settlem,results_p4/X087__settlem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+2,X059,lag_imbal,results_estaudit/X059__lag_imbal.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+3,X003,bossjlw_1,results_p4/X003__bossjlw_1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+4,X036,L_IDIxPol,work_p4/X036/verify_six_wide.csv,"term == ""L_IDIxPol""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n
+5,X003,juntajlw_1,results_p4/X003__juntajlw_1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+6,D1,jtdemxpropdem,results_demcap/D1__jtdemxpropdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+7,89,terrXdef,work/89/key_89_extract.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+9,X009,lowdem,results_p4/X009__lowdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+10,X093,pol,results_p4/X093__pol.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+11,X035,polsim3,results_estaudit/X035__polsim3.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+12,61,ordm1dpa,work/61/key_61_extract.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+13,X034,redem1_pdemdur1,results_p4/X034__redem1_pdemdur1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+14,X091,deplo,results_verify/X091__deplo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+15,D2,demlo,results_demcap/D2__demlo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+17,X079,l_interdep,results_p4/X079__l_interdep_affect_policies.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+18,69,enforcement2,work/69/key_69_enforcement2_extract.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+19,X077,democracy,results_p4/X077__democracy.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+20,108,IGOmedst,results_verify/108__IGOmedst.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+21,X035,jntdem,results_estaudit/X035__jntdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+22,C2,sun2cati,results_demcap/C2__sun2cati.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+23,X068,did.wto,results_p4/X068__did.wto.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+24,25,turnover,results/25.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+25,X077,Ipow,results_estaudit/X077__Ipow.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+26,X078,lowerpolity,results_p4/X078__lowerpolity.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+27,X074,lowdep,results_p4/X074__lowdep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+28,X066,jointdem,results_p4/X066__jointdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+29,68,requivlag5,results/68.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+30,X037,dem_mean,results_p4/X037__dem_mean.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+31,72,sols_count_exclusive,results/72.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+32,12,lower_conc,results/12.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+33,X033,jointdem,results_estaudit/X033__jointdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+34,X040,jointdem6,results_verify/X040__jointdem6.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+35,114,samecomm_hierlow_close,work/114/key_114_extract.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+36,X017,dxs,work_p4/X017/verify_six_wide.csv,"term == ""dxs""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n
+37,X066,development,results_p4/X066__development.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+38,X025,defpol4_notenure,results_estaudit/X025__defpol4_notenure.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+39,100,imposeedep,work/100/key_100_extract.csv,"key_term == ""imposeedep""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+40,X037,dmXds,results_p4/X037__dmXds.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+41,X022,polity_both,results_p4/X022__polity_both.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+42,X044,settlem,results_p4/X044__settlem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+43,X001,democ,results_p4/X001__democ.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+44,X017,demloi,work_p4/X017/verify_six_wide.csv,"term == ""demloi""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n
+45,101,smigoabi,results_estaudit/101__smigoabi.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+46,X043,D,results_p4/X043__D.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+47,X044,interaction,results_p4/X044__interaction.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+48,X020,bothdem,results_p4/X020__bothdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+49,106,lnbet1,results/106.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+50,X087,jtdem6,results_p4/X087__jtdem6.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+51,13,longitudinal_treatment,results/13.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+52,X079,l_interdep,results_p4/X079__l_interdep_territorial.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+53,10,uncondcompel,results/10.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+54,X001,mdemtar,results_p4/X001__mdemtar.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+55,X066,instrade,results_p4/X066__instrade.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+56,X043,CIEl,results_p4/X043__CIEl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+57,X078,F_signed_noforce,results_p4/X078__F_signed_noforce.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+58,86,DependD,work/86/key_86_extract.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+59,115,out_group [FE logit],results/115.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+60,71,samecomm,results/71.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+61,X090,extdeporig,results_estaudit/X090__extdeporig.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+62,X082,lowdep,results_estaudit/X082__lowdep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+63,X003,strongmanjlw_1,results_p4/X003__strongmanjlw_1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+64,X005,jointdem,results_p4/X005__jointdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+65,X067,jointdem,results_p4/X067__jointdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+66,63,smlinflowsgdpim,results_estaudit/63__smlinflowsgdpim.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+67,C1,demlo,results_demcap/C1__demlo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+68,X020,lowdem,results_p4/X020__lowdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+69,5,defense_pact_nuclear_cow,results/5.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+70,100,imp_interdep,work/100/key_100_extract.csv,"key_term == ""imp_interdep""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+71,X039,onedem,results_verify/X039__onedem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+72,X025,lndefexp,results_estaudit/X025__lndefexp.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+73,X022,polyprod,results_p4/X022__polyprod.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+74,X069,friendlassonotime,results_p4/X069__friendlassonotime.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+75,X032,logdev2,results_p4/X032__logdev2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+76,X016,demternonrival,results_p4/X016__demternonrival.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+77,X034,redem1,results_p4/X034__redem1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+78,54,high_organs,results/54.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+79,20,smldep,results_estaudit/20__smldep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+80,53,depend_m,results_estaudit/53__depend_m.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+81,88,signaltriads,results/88.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+83,X021,c_regstrengthsq,results_p4/X021__c_regstrengthsq.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+84,91,c1allcap,results/91.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+85,X044,jtdem6,results_p4/X044__jtdem6.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+86,X076,aff_l1,results_p4/X076__aff_l1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+87,X088,new_atop_ally,results_p4/X088__new_atop_ally.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+88,X031,jointdemo,results_p4/X031__jointdemo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+89,X021,c_regstrength,results_p4/X021__c_regstrength.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+90,X039,bothdem,results_verify/X039__bothdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+91,X093,lopenl,results_p4/X093__lopenl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+92,X067,idgNcrevA,results_p4/X067__idgNcrevA.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+93,C6,capopnl2,results_demcap/C6__capopnl2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+94,X052,abchg,results_p4/X052__abchg.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+95,X016,jntd6,results_p4/X016__jntd6.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+96,42,dflow_avegdplag,work/42/key_42_extract.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+97,62,lntradelinks3_index,results/62.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+98,X069,demlo,results_p4/X069__demlo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+99,X062,ptargdef,results_p4/X062__ptargdef.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+100,X036,L_IDI_weighted,work_p4/X036/verify_six_wide.csv,"term == ""L_IDI_weighted""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n
+101,X016,demterival,results_p4/X016__demterival.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+102,X014,demXgrow,results_p4/X014__demXgrow.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+103,119,lgintegse,results/119.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+104,X076,lowdem,results_p4/X076__lowdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+105,X079,l_dem_low,results_p4/X079__l_dem_low.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+106,C1,sun2cati,results_demcap/C1__sun2cati.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+107,X061,milinst,results_p4/X061__milinst.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+108,78,sal_x_size,results_verify/78__sal_x_size.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+109,X032,logdev,results_p4/X032__logdev.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+110,47,third_navA,results_estaudit/47__third_navA.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+111,55,allform2,results/55.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+112,C1,rgdppclo,results_demcap/C1__rgdppclo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+113,14,ptargdef,results/14.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+114,C5,dml,results_demcap/C5__dml.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+115,1,ptargdef,results/1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+116,X092,smldmat,results_estaudit/X092__smldmat.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+117,X034,redem1_pautdur1,results_p4/X034__redem1_pautdur1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+119,58,lngleddeplowAsia,work/58/key_58_extract.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+120,X001,pdemdtar,results_p4/X001__pdemdtar.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+121,C2,capopenl,results_demcap/C2__capopenl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+122,52,DyadEconDissim,results/52.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+123,X001,pdemdin,results_p4/X001__pdemdin.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+124,122,L_exports,results/122.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+125,17,extdeporig,results_estaudit/17__extdeporig.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+127,4,lgstrintrdep,results_verify/4__lgstrintrdep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+129,X080,defense,results_verify/X080__defense.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+130,109,ptargdef,results/109.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+131,X035,jntaut,results_estaudit/X035__jntaut.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+132,X068,joint,results_p4/X068__joint.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+133,64,L.open1_lev,work/64/key_64_wide.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+134,73,ltXext,work/73/key_73_wide.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+135,X052,abs_democ,results_p4/X052__abs_democ.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+137,99,sun2cati,results/99.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+138,X025,defpol4,results_estaudit/X025__defpol4.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+139,X001,sdemtar,results_p4/X001__sdemtar.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+140,104,igo_lev3_count_use_bc,results/104.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+141,X019,jointdem7,results_estaudit/X019__jointdem7.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+142,X021,demloi,results_p4/X021__demloi.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+143,X016,demnonternonriv,results_verify/X016__demnonternonriv.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+144,43,stc_low,results/43.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+145,X082,lowdem,results_estaudit/X082__lowdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+146,C2,rgdppclo,results_demcap/C2__rgdppclo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+147,X061,allies_s,results_p4/X061__allies_s.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+148,118,CentDif,results/118.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+149,65,lnrtrade,results_estaudit/65__lnrtrade.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+150,15,nfbdef,results/15.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+151,C2,demlo,results_demcap/C2__demlo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+152,11,cent50,results_estaudit/11__cent50.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+154,C1,capopenl,results_demcap/C1__capopenl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+155,X009,interaction4bjps,results_p4/X009__interaction4bjps.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+156,X022,polity_low,results_p4/X022__polity_low.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+157,C5,CIEl,results_demcap/C5__CIEl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+158,69,infoexchange2,results/69.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+159,108,IGOmaxst,results_verify/108__IGOmaxst.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+160,X031,jally_new2_participant,results_p4/X031__jally_new2_participant.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+161,C6,demlo2,results_demcap/C6__demlo2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+162,X074,lowdem,results_p4/X074__lowdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+163,N06,cinc_pr_dff,results/PSRM.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+164,X040,lowpol,results_verify/X040__lowpol.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+166,66,lnot1xswtglo,results_estaudit/66__lnot1xswtglo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+167,4,lgtrdintrdep,results_verify/4__lgtrdintrdep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+168,X031,jally_new2_target,results_p4/X031__jally_new2_target.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+170,X003,machinejlw_1,results_p4/X003__machinejlw_1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+171,D1,jtdem,results_demcap/D1__jtdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+172,D2,capopenlc1,results_demcap/D2__capopenlc1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+173,X025,dfdemexp,results_estaudit/X025__dfdemexp.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+174,X091,demlo_x_gdplo,results_verify/X091__demlo_x_gdplo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+175,X092,smigoabi,results_estaudit/X092__smigoabi.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+176,50,dependll,results/50.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+177,32,msod,results/32.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+178,C6,gdppcln,results_demcap/C6__gdppcln.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+179,57,lagreiall,results/57.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+180,115,out_group [LPM],results_estaudit/115__out_group__LPM_.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+181,X092,smldep,results_estaudit/X092__smldep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+182,103,relcincally,results/103.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+183,C7,capopenl,results_demcap/C7__capopenl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+184,X093,ltrl,results_p4/X093__ltrl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+185,X061,allytarg_win,results_p4/X061__allytarg_win.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+186,P8_043,hc_lo,results_p8/P8_043__hc_lo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+187,P8_041,democracynosuff,results_p8/P8_041__democracynosuff.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+188,P8_008,FUS_SecHierA,results_p8/P8_008__FUS_SecHierA.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+189,P8_046,lpublicb_bothsides,results_p8/P8_046__lpublicb_bothsides.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+190,P8_003,out_lnTradeVolumeGledd,results_p8/P8_003__out_lnTradeVolumeGledd.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+191,P8_017,accountability,results_p8/P8_017__accountability.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+192,P8_025,icrgsim,results_p8/P8_025__icrgsim.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+193,P8_050,dml,results_p8/P8_050__dml.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+194,P8_019,single,results_p8/P8_019__single.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+195,P8_004,wto_membership_x_trade,results_p8/P8_004__wto_membership_x_trade.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+196,P8_033,revpers10_lag1,results_p8/P8_033__revpers10_lag1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+197,P8_008,FUS_EconHierA,results_p8/P8_008__FUS_EconHierA.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+198,P8_049,ind_hi,results_p8/P8_049__ind_hi.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+199,P8_036,interact_region_diss,results_p8/P8_036__interact_region_diss.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+200,P8_048,democracy_low,results_p8/P8_048__democracy_low.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+201,P8_019,personal,results_p8/P8_019__personal.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+202,P8_035,relcap_targ_demchal6,results_p8/P8_035__relcap_targ_demchal6.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+203,P8_003,sel_lnTradeVolumeGledd,results_p8/P8_003__sel_lnTradeVolumeGledd.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+204,P8_048,development_low,results_p8/P8_048__development_low.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+205,P8_031,engypop,results_p8/P8_031__engypop.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+206,P8_031,pcenerg,results_p8/P8_031__pcenerg.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+207,P8_032,sysdems,results_p8/P8_032__sysdems.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+208,P8_015,nsclag,results_p8/P8_015__nsclag.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+209,P8_046,lpublicb,results_p8/P8_046__lpublicb.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+210,P8_007,trade_seq_ivscore,results_p8/P8_007__trade_seq_ivscore.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+211,P8_044,dml,results_p8/P8_044__dml.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+212,P8_031,polave,results_p8/P8_031__polave.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+213,P8_019,military,results_p8/P8_019__military.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+214,P8_041,lagjointMSdem,results_p8/P8_041__lagjointMSdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+215,P8_005,trade_dependence,results_p8/P8_005__trade_dependence.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+216,P8_037,BGcomp1pXpolity22p,results_p8/P8_037__BGcomp1pXpolity22p.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+217,P8_019,democ,results_p8/P8_019__democ.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+218,P8_030,xbi_netdem1,results_p8/P8_030__xbi_netdem1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+219,P8_032,demloi,results_p8/P8_032__demloi.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+220,P8_019,persdem,results_p8/P8_019__persdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+221,P8_043,hc_hi,results_p8/P8_043__hc_hi.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+222,P8_042,att_fatal_pool3,results_p8/P8_042__att_fatal_pool3.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+223,P8_012,trade_x_nationalist_leader,results_p8/P8_012__trade_x_nationalist_leader.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+224,P8_042,att_mid_pool3,results_p8/P8_042__att_mid_pool3.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+225,P8_007,trade_seq_ivnetwork,results_p8/P8_007__trade_seq_ivnetwork.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+226,P8_003,sel_GDPShareGledLow,results_p8/P8_003__sel_GDPShareGledLow.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+227,P8_035,relcap_targ_cgv_mil,results_p8/P8_035__relcap_targ_cgv_mil.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+228,P8_050,baxecon,results_p8/P8_050__baxecon.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+229,P8_020,vanpart,results_p8/P8_020__vanpart.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+230,P8_027,military,results_p8/P8_027__military.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+231,P8_003,out_GDPShareGledLow,results_p8/P8_003__out_GDPShareGledLow.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+232,P8_031,diff1,results_p8/P8_031__diff1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+233,P8_031,dydiff,results_p8/P8_031__dydiff.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+234,P8_015,jblag,results_p8/P8_015__jblag.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+235,P8_031,demloi,results_p8/P8_031__demloi.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+236,P8_025,polsim,results_p8/P8_025__polsim.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+237,P8_025,policrg,results_p8/P8_025__policrg.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+238,X060,"threat.net: j's support military spending (altX; H1, marginal effect at mean closeness)",_slow/X060.csv,"key_term == ""threat.net: j's support military spending (altX; H1, marginal effect at mean closeness)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+239,X055,Contiguity x three-degree alliance (Table 1 Model 1),_slow/X055.csv,"key_term == ""Contiguity x three-degree alliance (Table 1 Model 1)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+240,X085,"con_est: same regime x democracy (sameX x altX; joint-democracy effect on conflict ties, Table I si6con)",_slow/X085.csv,"key_term == ""con_est: same regime x democracy (sameX x altX; joint-democracy effect on conflict ties, Table I si6con)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+241,X055,Contiguity x one-degree alliance (Table 1 Model 1),_slow/X055.csv,"key_term == ""Contiguity x one-degree alliance (Table 1 Model 1)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+242,X057,edgecov weak-signal community tie (Table 1 Model 2),_slow/X057.csv,"key_term == ""edgecov weak-signal community tie (Table 1 Model 2)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+243,X060,threat.net: j's support military spending x j's support ideal-point closeness (altX x altX; H1/H3),_slow/X060.csv,"key_term == ""threat.net: j's support military spending x j's support ideal-point closeness (altX x altX; H1/H3)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+244,X055,Contiguity x two-degree alliance (Table 1 Model 1),_slow/X055.csv,"key_term == ""Contiguity x two-degree alliance (Table 1 Model 1)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+245,N03,GWESE+ (enemy of my enemy is my friend; DCA tie with shared MID enemies),_slow/N03.csv,"key_term == ""GWESE+ (enemy of my enemy is my friend; DCA tie with shared MID enemies)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+246,N05,boss,_slow/N05.csv,"key_term == ""boss""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+247,N08,joint_IGO,_slow/N08.csv,"key_term == ""joint_IGO""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+248,N07,trade_log_exports_i_to_j,_slow/N07.csv,"key_term == ""trade_log_exports_i_to_j""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+249,N04,democ_pers_directed_dyad,_slow/N04.csv,"key_term == ""democ_pers_directed_dyad""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+250,N05,strongman,_slow/N05.csv,"key_term == ""strongman""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+251,N05,junta,_slow/N05.csv,"key_term == ""junta""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+252,N03,GWESF+ (friend of my friend is my friend; DCA tie with shared DCA friends),_slow/N03.csv,"key_term == ""GWESF+ (friend of my friend is my friend; DCA tie with shared DCA friends)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+253,N05,machine,_slow/N05.csv,"key_term == ""machine""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+254,N01,Integrated SEq (ERGM LDV col.),_slow/N01.csv,"key_term == ""Integrated SEq (ERGM LDV col.)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+255,N07,trade_log_imports_j_to_i,_slow/N07.csv,"key_term == ""trade_log_imports_j_to_i""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+256,N02,"Three-way clustering (cross-layer three-trail MID-civil-nonstate, incident): the paper's key theoretical term",_slow/N02.csv,"key_term == ""Three-way clustering (cross-layer three-trail MID-civil-nonstate, incident): the paper's key theoretical term""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+257,N08,trade_import_ij,_slow/N08.csv,"key_term == ""trade_import_ij""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+258,N07,joint_IGOs,_slow/N07.csv,"key_term == ""joint_IGOs""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+259,N01,Integrated SEq (ERGM col.),_slow/N01.csv,"key_term == ""Integrated SEq (ERGM col.)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+260,N03,GWESE- (enemy of my enemy is my enemy; MID tie with shared enemies),_slow/N03.csv,"key_term == ""GWESE- (enemy of my enemy is my enemy; MID tie with shared enemies)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+261,N04,pers_democ_directed_dyad,_slow/N04.csv,"key_term == ""pers_democ_directed_dyad""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+262,N07,alliance_level,_slow/N07.csv,"key_term == ""alliance_level""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+263,N02,MID-Civil Conflict alternating k-star(1): state's MID ties cluster with its civil-conflict ties,_slow/N02.csv,"key_term == ""MID-Civil Conflict alternating k-star(1): state's MID ties cluster with its civil-conflict ties""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+264,N08,joint_democracy_polity_i_x_polity_j,_slow/N08.csv,"key_term == ""joint_democracy_polity_i_x_polity_j""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+265,N01,Minimum Regime Score (ERGM col.),_slow/N01.csv,"key_term == ""Minimum Regime Score (ERGM col.)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+266,N03,GWESF- (MID tie between states sharing friends),_slow/N03.csv,"key_term == ""GWESF- (MID tie between states sharing friends)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+267,N01,Two-star (popularity; authors' own claim),_slow/N01.csv,"key_term == ""Two-star (popularity; authors' own claim)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+268,N01,Triangle (enemy of my enemy; authors' own claim),_slow/N01.csv,"key_term == ""Triangle (enemy of my enemy; authors' own claim)""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+269,P8_022,Coalition size x proportion of capabilities (Wratioany),results_p8/P8_022__Wratioany.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+270,P9_001,dca_dum,results_p9/P9_001__dca_dum.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+271,P9_001,dcacount,results_p9/P9_001__dcacount.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+272,P9_002,interaction2,results_p9/P9_002__interaction2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+273,P9_004,c1allcap,results_p9/P9_004__c1allcap.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+274,P9_004,capinter,results_p9/P9_004__capinter.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+275,P9_008,logref1,results_p9/P9_008__logref1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+276,P9_008,logref2,results_p9/P9_008__logref2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+277,P9_012,gov_defense_pure,results_p9/P9_012__gov_defense_pure.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+278,P9_012,gov_consul,results_p9/P9_012__gov_consul.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+279,P9_012,reb_neunon,results_p9/P9_012__reb_neunon.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+280,P9_016,tgt_defense,results_p9/P9_016__tgt_defense.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+281,P9_016,ini_offense,results_p9/P9_016__ini_offense.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+282,P9_017,i2_numigo,results_p9/P9_017__i2_numigo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+283,P9_023,kdeplo,results_p9/P9_023__kdeplo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+284,P9_023,kdeplo_I1,results_p9/P9_023__kdeplo_I1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+285,P9_028,igo_l1,results_p9/P9_028__igo_l1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+286,P9_029,aff_l1,results_p9/P9_029__aff_l1.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+287,P9_030,lnprep_x_ally,results_p9/P9_030__lnprep_x_ally.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+288,P9_031,PTA_traBilMax,results_p9/P9_031__PTA_traBilMax.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+289,P9_033,e_s2,results_p9/P9_033__e_s2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+290,P9_034,interdep,results_p9/P9_034__interdep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+291,P9_035,out_allypc,_slow/P9_035.csv,"key_term == ""out_allypc""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+292,P9_036,dca,results_p9/P9_036__dca.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+295,P9_040,L1std_comm_fg_pr_dissat_A,results_p9/P9_040__L1std_comm_fg_pr_dissat_A.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+296,P9_040,L1std_comm_fg_pr_dissat_A_war,results_p9/P9_040__L1std_comm_fg_pr_dissat_A__war.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+297,P9_041,loglagTIGO,results_p9/P9_041__loglagTIGO.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+298,P9_041,loglagTIGO_allconflict,results_p9/P9_041__loglagTIGO_allconflict.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+299,P9_043,intra_index_final,results_p9/P9_043__intra_index_final.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+300,P9_045,Ldepkg1,_slow/P9_045.csv,"key_term == ""Ldepkg1""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+301,P9_046,lnsg_strat_int,results_p9/P9_046__lnsg_strat_int.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+302,P9_046,lnsg_int,results_p9/P9_046__lnsg_int.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+303,P9_047,max_dyadic_dist,results_p9/P9_047__max_dyadic_dist.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+304,P9_047,max_third_dist,results_p9/P9_047__max_third_dist.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+305,P9_048,oil_dep_x_degree,results_p9/P9_048__oil_dep_x_degree.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+306,P9_050,ext_x_tradecent,results_p9/P9_050__ext_x_tradecent.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+307,P9_051,l1_poor_rep_t_def,results_p9/P9_051__l1_poor_rep_t_def.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+308,P9_053,unscA,results_p9/P9_053__unscA.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+309,P9_053,unscB,results_p9/P9_053__unscB.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+310,P9_054,ldep1_OR,results_p9/P9_054__ldep1_OR.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+311,P9_054,ldep2_OR,results_p9/P9_054__ldep2_OR.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+312,P9_056,fbdef,results_p9/P9_056__fbdef.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+313,P9_056,nfbdef,results_p9/P9_056__nfbdef.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+314,P9_057,ally_cost,_slow/P9_057.csv,"key_term == ""ally_cost""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+315,P9_060,civilian,results_p9/P9_060__civilian.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+316,P9_061,dem_year,results_p9/P9_061__dem_year.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+317,P9_064,w1power,results_p9/P9_064__w1power.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+318,P9_064,w1w2,results_p9/P9_064__w1w2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+319,P9_062,cspart_ij,results_p9/P9_062__cspart_ij.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+320,P9_065,cost_x_sal,results_p9/P9_065__cost_x_sal.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+321,P9_065,costratio,results_p9/P9_065__costratio.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+322,P9_066,demdyad,results_p9/P9_066__demdyad.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+323,P9_067,dem_x_dev,results_p9/P9_067__dem_x_dev.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+324,P9_068,afr_x_dem,results_p9/P9_068__afr_x_dem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+325,P9_071,salience,results_p9/P9_071__salience.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+326,P9_074,tdep,results_p9/P9_074__tdep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+327,P9_075,debt,results_p9/P9_075__debt.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+328,P9_078,smigoabi,results_p9/P9_078__smigoabi.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+329,P9_079,anysanctB,results_p9/P9_079__anysanctB.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+330,P9_080,allypc,results_p9/P9_080__allypc.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+331,P9_085,devdem,results_p9/P9_085__devdem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+332,P9_082,demigo,results_p9/P9_082__demigo.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+333,P9_087,gpdem_x_dem,results_p9/P9_087__gpdem_x_dem.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+334,P9_089,DEML_hat,results_p9/P9_089__DEML_hat.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+335,P9_092,gendense_lag,_slow/P9_092.csv,"key_term == ""gendense_lag""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+336,P9_093,tie3,results_p9/P9_093__tie3.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+337,P9_094,arms,results_p9/P9_094__arms.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used

@@ -541,7 +541,7 @@ if (file.exists(ws_path)) {
                                   "Hostility level"    = ACCENT2),
                        name = NULL) +
     labs(
-      title = "State-level robustness: MID-sample and hostility-level specifications",
+      title = "State level: MID-sample and hostility-level variants",
       x = "Coefficient (95% CI)", y = NULL
     ) +
     theme_pres() +

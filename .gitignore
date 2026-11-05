@@ -24,5 +24,5 @@ renv/staging/
 # Stage 5 replication sweep: authors' data (data/raw/* above) and per-study intermediates
 results/replication_sweep/_build/
 
-# replication sweep not released
-code/04_replication_sweep/
+# replication sweep: old reference-estimate backup not released
+code/04_replication_sweep/expected_est_before_rebuild_*.rds

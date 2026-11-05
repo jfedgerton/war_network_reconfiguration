@@ -141,14 +141,37 @@ options(future.globals.maxSize = 100 * 1024^3)   # 100 GB
 # completed batches will be loaded from disk and skipped. Set the env var
 # ROBUSTNESS_RESET=1 to delete checkpoints and start fresh.
 CHECKPOINT_DIR <- here::here("data", "processed", ".robustness_checkpoints")
+# --------------------------------------------------------------------------- #
+# [2026-11-05] PERMUTATION MODE (specification-curve inference; driver = 32_multiverse_permutation.R).
+# MV_PERM_DRAW unset  -> normal run (nothing below changes behaviour).
+# MV_PERM_DRAW = 0    -> observed draw: the fixed combo subset, IVs NOT permuted (comparator).
+# MV_PERM_DRAW = k>0  -> conflict IVs permuted with seed 123 + k (system: years shuffled jointly across the four
+#                        system IVs; state: t-1 IVs shuffled jointly across years within each state, as in 04).
+# In permutation mode the run uses a private checkpoint dir, a sequential plan, the "none" belligerent rule,
+# no timing_fe grid and no VAR/Granger/FEVD; it writes one file to data/processed/mv_perm/ and quits before
+# any of the normal outputs are written.
+# --------------------------------------------------------------------------- #
+PERM_DRAW <- suppressWarnings(as.integer(Sys.getenv("MV_PERM_DRAW", "")))
+PERM_MODE <- !is.na(PERM_DRAW)
+if (PERM_MODE) {
+  stopifnot(PERM_DRAW >= 0)
+  PERM_N_COMBOS <- as.integer(Sys.getenv("MV_PERM_N_COMBOS", "3"))
+  PERM_OUT_DIR  <- here::here("data", "processed", "mv_perm")
+  dir.create(PERM_OUT_DIR, recursive = TRUE, showWarnings = FALSE)
+  CHECKPOINT_DIR <- file.path(tempdir(), sprintf("mv_perm_ckpt_%04d", PERM_DRAW))
+  unlink(CHECKPOINT_DIR, recursive = TRUE)
+  cat(sprintf("PERMUTATION MODE: draw %d, %d layer combos, private checkpoint dir %s\n",
+              PERM_DRAW, PERM_N_COMBOS, CHECKPOINT_DIR))
+}
 dir.create(CHECKPOINT_DIR, recursive = TRUE, showWarnings = FALSE)
+if (PERM_MODE) { plan(sequential); .n_workers <- 1L }   # draws run in parallel processes instead
 # Guarded checkpoint reset: only fires under Rscript / batch mode (where
 # `interactive()` returns FALSE), never when the script is sourced into an
 # interactive R session. This protects against the failure mode where a
 # stale ROBUSTNESS_RESET env var (set by run_all.R Stage 0 in a previous
 # run) silently wipes checkpoints when the user re-sources 03 to recover
 # post-processing outputs.
-if (Sys.getenv("ROBUSTNESS_RESET", "0") == "1" && !interactive()) {
+if (Sys.getenv("ROBUSTNESS_RESET", "0") == "1" && !interactive() && !PERM_MODE) {
   unlink(list.files(CHECKPOINT_DIR, full.names = TRUE))
   cat("Checkpoints reset (ROBUSTNESS_RESET=1).\n")
 } else if (Sys.getenv("ROBUSTNESS_RESET", "0") == "1" && interactive()) {
@@ -879,7 +902,10 @@ control_sets <- get_control_sets("mid_count")
 # weights at t-1, so it is recomputed inside the combo loop, not merged in
 # from a canonical panel. log_gdp is a state-year attribute and is merged once.
 # --------------------------------------------------------------------------- #
-EXTRA_CTRLS <- c("none", "gdp", "strength", "spillover", "comm_spill")
+# [2026-11-05] Only GDP is kept as an extra control. "strength" (log network strength at t-1) is post-treatment
+# with respect to conflict at t-1, and "spillover" / "comm_spill" are partner war exposure, which the paper no
+# longer uses. Their code paths below are left in place but never reached.
+EXTRA_CTRLS <- c("none", "gdp")
 
 augment_controls <- function(rhs, extra) {
   if (extra == "none")     return(rhs)
@@ -1159,6 +1185,47 @@ if ("ongoing_fatal_t1" %in% BELLIG_RULES && "churn_peace_ft1" %in% names(state_d
   stopifnot(max(abs(cc$churn - cc$churn_peace_ft1), na.rm = TRUE) < 1e-9,
             identical(is.na(cc$churn), is.na(cc$churn_peace_ft1)))
   rm(cc)
+}
+
+# ---- [2026-11-05] permutation mode: restrict the grid and permute the conflict IVs ----------------------------
+if (PERM_MODE) {
+  BELLIG_RULES      <- "none"           # heatmap / support shares use the all-dyads rule only
+  STATE_TFE_ENABLED <- FALSE            # timing_fe grid is split out of the support shares
+  granger_dvs       <- character(0)     # VAR / Granger / FEVD rows carry no signed coefficient
+  # Fixed random subset of layer combos (same subset in every draw, including the observed draw 0).
+  stopifnot(PERM_N_COMBOS >= 1, PERM_N_COMBOS <= length(all_combos))
+  set.seed(123)
+  perm_combo_idx <- sort(sample(seq_along(all_combos), PERM_N_COMBOS))
+  all_combos <- all_combos[perm_combo_idx]
+  cat("  Permutation combos:", paste(sapply(all_combos, function(cb) paste(sort(cb), collapse = "+")), collapse = " ; "), "\n")
+
+  if (PERM_DRAW > 0) {
+    set.seed(123 + PERM_DRAW)
+    # System: one permutation of years, applied jointly to the four system IVs; the calendar lag is rebuilt.
+    sys_iv_cols <- c("mid_count", "log_mid_count", "fatal_mid_count", "log_fatal_mid_count")
+    stopifnot(all(sys_iv_cols %in% names(system_war)))
+    sys_perm <- sample(nrow(system_war))
+    for (v in sys_iv_cols) system_war[[v]] <- system_war[[v]][sys_perm]
+    system_war_lag1 <- system_war |>
+      dplyr::transmute(year = year + 1L,
+                       mid_count_lag1 = mid_count, log_mid_count_lag1 = log_mid_count,
+                       fatal_mid_count_lag1 = fatal_mid_count, log_fatal_mid_count_lag1 = log_fatal_mid_count)
+    # State: within each state, the t-1 IVs are shuffled jointly across that state's defined years
+    # (rows with an undefined lag keep it undefined, so the estimation sample is unchanged).
+    lag_cols <- paste0(state_war_vars, "__lag1")
+    stopifnot(all(lag_cols %in% names(state_data)))
+    na_pat <- is.na(state_data[[lag_cols[1]]])
+    stopifnot(all(sapply(lag_cols, function(v) identical(is.na(state_data[[v]]), na_pat))))
+    pre_tot <- colSums(as.data.frame(state_data)[, lag_cols], na.rm = TRUE)
+    idx_by_state <- split(which(!na_pat), state_data$ccode[!na_pat])
+    new_idx <- seq_len(nrow(state_data))
+    for (ix in idx_by_state) new_idx[ix] <- if (length(ix) > 1) ix[sample.int(length(ix))] else ix
+    for (v in lag_cols) state_data[[v]] <- state_data[[v]][new_idx]
+    stopifnot(identical(is.na(state_data[[lag_cols[1]]]), na_pat),
+              isTRUE(all.equal(colSums(as.data.frame(state_data)[, lag_cols], na.rm = TRUE), pre_tot)))
+    set.seed(123)   # downstream RNG (furrr seed streams) identical across draws
+    cat(sprintf("  IVs permuted (draw %d)\n", PERM_DRAW))
+  }
 }
 
 MV_SCHEMA_VERSION <- mv_schema_string()   # EXTRA_CTRLS, combos, weightings, transforms are final here
@@ -1900,8 +1967,8 @@ for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
           # GDP/strength run ONLY on the theory-motivated IV x DV subset
           # [2026-07-15]. The baseline (extra_ctrl == "none") keeps the full
           # sweep. This is what makes the GDP/strength robustness cheap.
-          if (extra_ctrl != "none" &&
-              (!war_var %in% GDP_STRENGTH_IVS || !dv %in% GDP_STRENGTH_DVS)) next
+          # [2026-11-05] GDP now crosses the full state grid (every IV x DV and the no-FE classes below);
+          # the GDP_STRENGTH_IVS x GDP_STRENGTH_DVS restriction no longer applies.
 
           rhs_x <- augment_controls(controls_rhs, extra_ctrl)
           # [2026-10-13] record (do not silently drop) cells whose extra control is unusable in this cell
@@ -2083,9 +2150,15 @@ for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
           }
         }
 
+        # [2026-11-05] C and D also cross EXTRA_CTRLS (none, gdp), so GDP is a full multiverse dimension.
+        # baseline_noFE (IV only, no controls) is not crossed: it has no control set to augment.
+        for (extra_ctrl in EXTRA_CTRLS) {
+        if (extra_ctrl == "gdp" && (!"log_gdp" %in% names(analysis_sub) || all(is.na(analysis_sub$log_gdp)))) next
+        rhs_x <- augment_controls(controls_rhs, extra_ctrl)
+
         # ── C. Full model, no FE ──
         fml_full_nofe <- as.formula(paste(dv_col, "~", iv_main, "+",
-                                          controls_rhs))
+                                          rhs_x))
 
         m_full_nofe <- tryCatch(
           lm(fml_full_nofe, data = analysis_sub),
@@ -2098,6 +2171,7 @@ for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
               level = "state", dv = dv, war_variable = war_var,
               weighting = method, transform = tfm, layers = combo_name,
               n_layers = length(layers_subset), model = "full_noFE",
+              extra_control = extra_ctrl,
               exposure = exposure_label,
               coef = sm[iv_main, "Estimate"],
               se = sm[iv_main, "Std. Error"],
@@ -2117,7 +2191,7 @@ for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
         # SE ladder (iid, HC3, NW) as the system-level OLS specs above so
         # they appear cleanly in the spec curve and meta-regression.
         fml_full_nofe_y <- as.formula(paste(dv_col, "~", iv_main, "+",
-                                              controls_rhs, "+ poly(year, 2)"))
+                                              rhs_x, "+ poly(year, 2)"))
 
         m_full_nofe_y <- tryCatch(
           lm(fml_full_nofe_y, data = analysis_sub),
@@ -2160,6 +2234,7 @@ for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
               level = "state", dv = dv, war_variable = war_var,
               weighting = method, transform = tfm, layers = combo_name,
               n_layers = length(layers_subset), model = "full_noFE_year_poly",
+              extra_control = extra_ctrl,
               exposure = exposure_label,
               coef = est_val,
               se = se_iid,
@@ -2178,6 +2253,8 @@ for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
             )
           }
         }
+
+        }  # end extra_ctrl loop (C, D) [2026-11-05]
 
         # ── D2. State + order_period FE  [REMOVED 2026-07-14] ──
         #
@@ -2316,6 +2393,33 @@ ckpt_files <- file.path(CHECKPOINT_DIR, expected_ckpt)
 if (!all(file.exists(ckpt_files))) stop("missing checkpoint batches: ", paste(expected_ckpt[!file.exists(ckpt_files)], collapse = ", "))
 spec_results <- lapply(ckpt_files, read_ckpt)   # stops on any checkpoint with a different schema
 specs_df <- bind_rows(spec_results)
+
+# [2026-11-05] permutation mode: summarise this draw and quit before any normal output is written.
+if (PERM_MODE) {
+  if (!"fit_status" %in% names(specs_df)) specs_df$fit_status <- NA_character_
+  if (!"extra_control" %in% names(specs_df)) specs_df$extra_control <- "none"
+  pd <- specs_df |>
+    dplyr::filter(is.na(fit_status) | fit_status == "ok", bellig_rule == "none",
+                  !startsWith(model, "VAR_"), !is.na(coef), !is.na(pval)) |>
+    dplyr::mutate(extra_control = tidyr::replace_na(extra_control, "none"),
+                  hypothesis = dplyr::if_else(level == "system", "H1", "H2"),
+                  sig_pos = coef > 0 & pval / 2 < 0.10,
+                  z = coef / se)
+  stopifnot(nrow(pd) > 0, all(c("H1", "H2") %in% pd$hypothesis), all(pd$extra_control %in% c("none", "gdp")))
+  summ <- pd |>
+    dplyr::group_by(hypothesis) |>
+    dplyr::summarise(n = dplyr::n(), share_sig_pos = mean(sig_pos), share_pos = mean(coef > 0),
+                     median_z = stats::median(z, na.rm = TRUE), mean_z = mean(z, na.rm = TRUE), .groups = "drop") |>
+    dplyr::mutate(draw = PERM_DRAW)
+  readr::write_csv(summ, file.path(PERM_OUT_DIR, sprintf("draw_%04d.csv", PERM_DRAW)))
+  if (PERM_DRAW == 0)   # observed draw: keep every row so the driver can check it against the main run
+    readr::write_csv(pd |> dplyr::select(level, dv, war_variable, weighting, transform, layers, model,
+                                         extra_control, coef, se, pval),
+                     file.path(PERM_OUT_DIR, "draw_0000_specs.csv"))
+  unlink(CHECKPOINT_DIR, recursive = TRUE)
+  cat(sprintf("PERMUTATION MODE: draw %d written (%d specs)\n", PERM_DRAW, nrow(pd)))
+  quit(save = "no", status = 0)
+}
 # [2026-10-13] FE_full fit coverage: attempted vs estimated, by cell type. Non-"ok" rows leave the results here.
 if (!"fit_status" %in% names(specs_df)) specs_df$fit_status <- NA_character_
 fit_cov <- specs_df |>
@@ -3789,7 +3893,11 @@ if (nrow(granger_compare) > 0) {
     js_divergence = "JS\nDivergence",
     edge_turnover_pct = "Edge\nTurnover (%)",
     degree_kl = "Degree\nKL",
-    degree_wasserstein = "Degree\nWasserstein"
+    degree_wasserstein = "Degree\nWasserstein",
+    log_kl_divergence = "Log KL\nDivergence",
+    log_js_divergence = "Log JS\nDivergence",
+    log_degree_kl = "Log Degree\nKL",
+    log_degree_wasserstein = "Log Degree\nWasserstein"
   )
 
   granger_summary <- granger_compare |>
@@ -3821,7 +3929,7 @@ if (nrow(granger_compare) > 0) {
          title = "Forward vs. reverse Granger",
          fill = "Direction") +
     theme_minimal(base_size = 13) +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 10),
+    theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 9, colour = "black"),   # horizontal two-line labels [2026-11-05]
           strip.text = element_text(face = "bold", size = 9),
           legend.position = "top",
           legend.title = element_text(size = 13, face = "bold"),
@@ -4342,7 +4450,7 @@ specs <- specs |> mutate(across(any_of(bool_cols), ~ as.logical(.x)))
 specs <- specs |>
   filter(!str_starts(model, "VAR_")) |>           # drop VAR / Granger / FEVD cells
   filter(!is.na(coef), !is.na(pval)) |>
-  filter(dplyr::coalesce(extra_control, "none") == "none") |>   # [2026-10-13] baseline rows only
+  # [2026-11-05] all directional specs, including the log-GDP rows (GDP crosses the full state grid)
 
   mutate(
     hypothesis = case_when(
@@ -4354,6 +4462,10 @@ specs <- specs |>
   filter(!is.na(hypothesis))
 
 HYP <- c("H1", "H2")
+specs <- specs |> mutate(extra_control = dplyr::coalesce(extra_control, "none"))
+stopifnot(all(specs$extra_control %in% c("none", "gdp")))
+specs_base <- specs |> filter(extra_control == "none")
+N_SPEC <- table(specs$hypothesis)
 
 # ===========================================================================
 # 2. Readable labels for each decision value
@@ -4387,13 +4499,16 @@ ITEM_ORDER <- c(
   "All MIDs", "Fatal MIDs",
   # (e) edge weighting
   "Contiguity (Euclidean)", "Contiguity (Manhattan)",
-  "Distance (Euclidean)", "Distance (Manhattan)", "Unweighted"
+  "Distance (Euclidean)", "Distance (Manhattan)", "Unweighted",
+  # (f) extra control
+  "No GDP", "Log GDP"
 )
 CAT_A <- "(a) Reconfig-\nuration measure"
 CAT_B <- "(b) Network layer\nincluded"
 CAT_C <- "(c) Variable\ntransform"
 CAT_D <- "(d) Conflict\nmeasure"
 CAT_E <- "(e) Edge\nweighting"
+CAT_F <- "(f) Extra\ncontrol"
 
 pct <- function(x) 100 * mean(x)   # share TRUE over a non-empty logical vector
 
@@ -4435,12 +4550,23 @@ d_weight <- specs |>
   summarise(val = pct(sig_pos), .groups = "drop") |>
   mutate(category = CAT_E)
 
-heat <- bind_rows(d_recon, d_layer, d_trans, d_conf, d_weight) |>
+# (f) like-for-like: only the model classes that carry a GDP variant (state level), so None vs GDP
+# compares the same models. H1 has no GDP rows and shows dashes.
+CELL_KEYS <- c("level", "dv", "war_variable", "weighting", "transform", "layers", "model")
+gdp_cells <- specs |> filter(extra_control == "gdp") |> distinct(across(all_of(CELL_KEYS)))
+d_ctrl <- specs |>
+  semi_join(gdp_cells, by = CELL_KEYS) |>   # only cells estimated both with and without GDP
+  mutate(item = if_else(extra_control == "gdp", "Log GDP", "No GDP")) |>
+  group_by(hypothesis, item) |>
+  summarise(val = pct(sig_pos), .groups = "drop") |>
+  mutate(category = CAT_F)
+
+heat <- bind_rows(d_recon, d_layer, d_trans, d_conf, d_weight, d_ctrl) |>
   # Fill the (item x hypothesis) grid so undefined combinations become NA (dash),
   # NOT a mislabeled numeric. This is what removes the stray "NA" cell.
   complete(nesting(category, item), hypothesis = HYP) |>
   mutate(
-    category   = factor(category, levels = c(CAT_A, CAT_B, CAT_C, CAT_D, CAT_E)),
+    category   = factor(category, levels = c(CAT_A, CAT_B, CAT_C, CAT_D, CAT_E, CAT_F)),
     item       = factor(item, levels = rev(ITEM_ORDER)),   # first listed on top
     hypothesis = factor(hypothesis, levels = HYP),
     label      = ifelse(is.na(val), "—", sprintf("%.0f", val))
@@ -4455,12 +4581,13 @@ p_heat <- ggplot(heat, aes(x = hypothesis, y = item, fill = val)) +
                        na.value = "grey90", name = "% significant positive") +
   scale_x_discrete(position = "top") +
   labs(title = "Which specification choices matter?",
-       subtitle = "Share of specifications significant-positive, by decision. Dashes = measure not defined at that level.",
+       subtitle = sprintf("Share of specifications significant-positive, by decision (H1: %s specs; H2: %s specs).\nDashes = measure not defined at that level. Row (f) compares the same models with and without log GDP.",
+                          format(N_SPEC[["H1"]], big.mark = ","), format(N_SPEC[["H2"]], big.mark = ",")),
        x = NULL, y = NULL) +
   guides(fill = guide_colorbar(barwidth = 12, barheight = 0.5, title.position = "top")) +
   theme_minimal(base_size = 11) +
   theme(panel.grid = element_blank(),
-        strip.text.y.left = element_text(angle = 90, face = "bold", size = 8),
+        strip.text.y.left = element_text(angle = 0, hjust = 1, face = "bold", size = 8),   # horizontal so labels are not clipped [2026-11-05]
         strip.placement = "outside",
         legend.position = "bottom",
         axis.text = element_text(color = "black"),
@@ -4516,7 +4643,7 @@ cat("  -> fig_multiverse_hypotheses.png\n")
 #    meta-regression coefficients read as SD-unit shifts in the downstream
 #    estimate and are comparable within each facet.
 # ===========================================================================
-meta_df <- specs |>
+meta_df <- specs |>   # [2026-11-05] all specs; GDP enters as the extra_ctl indicator
   group_by(hypothesis) |>
   mutate(coef_z = as.numeric(scale(coef))) |>
   ungroup() |>

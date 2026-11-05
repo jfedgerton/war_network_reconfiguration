@@ -22,7 +22,7 @@ st_vars  <- c(churn = "Network Churn", churn_peace_ft1 = "Network Churn, peace d
 stopifnot(all(names(sys_vars) %in% names(sys)), all(names(st_vars) %in% names(st)))
 
 summ <- function(df, vars) {
-  df |> select(all_of(names(vars))) |>
+  df |> dplyr::select(all_of(names(vars))) |>
     pivot_longer(everything(), names_to = "variable", values_to = "value") |>
     group_by(variable) |>
     summarise(N = sum(!is.na(value)), Mean = mean(value, na.rm = TRUE), SD = sd(value, na.rm = TRUE),

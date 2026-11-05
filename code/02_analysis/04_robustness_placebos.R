@@ -637,8 +637,11 @@ null_st  <- perm_df |> filter(level == "state",  term == "log_fatal_onset_lag1")
 obs_lines <- tibble(
   panel    = factor(panel_lvls, levels = panel_lvls),
   observed = c(obs_sys, obs_st),
-  p_label  = sprintf("p = %.3f", c(mean(abs(null_sys) >= abs(obs_sys)),
-                                   mean(abs(null_st)  >= abs(obs_st))))
+  # p = 0 means no permuted draw reached the observed value; report the bound p < 1/n_draws [2026-11-05]
+  p_label  = c(ifelse(mean(abs(null_sys) >= abs(obs_sys)) == 0, sprintf("p < %.3f", 1 / length(null_sys)),
+                      sprintf("p = %.3f", mean(abs(null_sys) >= abs(obs_sys)))),
+               ifelse(mean(abs(null_st) >= abs(obs_st)) == 0, sprintf("p < %.3f", 1 / length(null_st)),
+                      sprintf("p = %.3f", mean(abs(null_st) >= abs(obs_st)))))
 )
 
 p18 <- ggplot(perm_focal, aes(x = estimate)) +

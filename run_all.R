@@ -200,6 +200,13 @@ cat("\n\n###  STAGE 3: APPENDIX ROBUSTNESS  ###\n\n")
 
 step("02_analysis", "07_robustness_multiverse.R",
      "07 Multiverse: spec curve, meta-regression, LOO")
+# [2026-11-05] Specification-curve inference for the multiverse (permuted-conflict null). Runs 07 once per
+# draw in permutation mode (500 draws, 10 parallel processes; several hours). RUN_MV_PERM=FALSE skips it and
+# keeps existing draws; finished draws are reused on a rerun.
+if (as.logical(Sys.getenv("RUN_MV_PERM", "TRUE"))) {
+  step("02_analysis", "32_multiverse_permutation.R",
+       "32 Multiverse permutation inference (fig_multiverse_permutation)")
+}
 step("02_analysis", "06_sensitivity_plots.R",
      "06 Renders sensitivity figures (needs 04, 05 and 07 outputs) -> Figures 6, 7")
 step("02_analysis", "08_validate_edge_weights.R",
@@ -243,8 +250,9 @@ step("02_analysis", "24_robustness_cinc_nonmobilization.R",
 
 # Restored 2026-10-01 (from code/02_analysis/_archive and archive/code_archive_20260714/orphans):
 # producers of appendix exhibits that were displayed but no longer regenerated.
-step("02_analysis", "25_robustness_strength_control.R",
-     "25 Strength control (fig_ms_strength_control)")
+# [2026-11-05] 25 (network-strength control) dropped: strength at t-1 is post-treatment.
+# step("02_analysis", "25_robustness_strength_control.R",
+#      "25 Strength control (fig_ms_strength_control)")
 step("02_analysis", "26_robustness_gdp_control.R",
      "26 GDP control (fig_ms_gdp_robustness, tableA_gdp_robustness)")
 step("02_analysis", "27_robustness_nonparticipant_kl.R",
@@ -301,6 +309,8 @@ step("03_figures", "02_case_study_map.R",
      "02 Ottoman-Byzantine four-panel map        -> Figure 5")
 step("03_figures", "03_mediation_table.R",
      "03 Mediation LaTeX table (appendix companion to Figure 7)")
+step("03_figures", "04_granger_forward_reverse.R",
+     "Granger forward vs. reverse figure (from saved 07 specifications)")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGE 5: REPLICATION SWEEP  (04_replication_sweep)
