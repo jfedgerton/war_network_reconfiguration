@@ -64,7 +64,7 @@ row_id,id,alpha_pub,tails,star_legend,evidence,confidence,alpha_used,decision_no
 102,X014,0.05,unstated,none (author logs only),no article PDF; only OT.zip Stata logs/README (no star legend),low,0.05,
 103,119,0.05,unstated,*p<.05 **p<.01 ***p<.001,"Maoz et al. (2006) JCR.pdf Table notes ""*** p < .001"" and ""*p < .05. **p < .01.""",high,0.05,
 104,X076,0.05,two,*p<.05 **p<.01 ***p<.001 (two-tailed),"Gartzke (2000) ISQ.pdf Table note: ""*p < .05, two-tailed test; **p < .01, two-tailed test""",high,0.05,
-108,78,0.05,two,* p<=0.001 (two-tailed),"Benson (2005) CMPS.pdf note ""Two-tailed significance tests. * p <= 0.001""; text calls p = 0.082 ""significant"" (Sample 5)",low,0.05,
+108,78,0.10,two,* p<=0.001 (two-tailed),"Benson (2005) CMPS.pdf note ""Two-tailed significance tests. * p <= 0.001""; text calls p = 0.082 ""significant"" (Sample 5)",low,0.10,2026-11-08: recoded to 0.10; the text treats p = .078 and p = .082 as significant.
 110,47,0.05,two,***p<0.01 **p<0.05 *p<0.1 (two-tailed),"Feldman et al. (2021) JCR.pdf Table note ""Significance in two-tailed tests... *p < 0.1""; no text relying on .10",medium,0.05,
 111,55,0.05,unstated,*p<.01,"Kimball (2006) JPR.pdf Table note: ""* p < .01. Robust standard errors are reported in parentheses.""",medium,0.05,
 113,14,0.05,unstated,95% CIs (figures),"Morrow (2017) JOP.pdf: ""whiskers give the 95% confidence interval around each estimate""",high,0.05,

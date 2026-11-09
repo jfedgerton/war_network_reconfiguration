@@ -113,11 +113,11 @@ doi,journal,year,first_author,family,source,stage_reached,final_status,reason,sw
 10.1080/03050629.2015.1069292,II,2016,McCallister,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p8),P8_036,first_pass,10.1080/03050629.2015.1069292
 10.1080/03050629.2025.2609092,II,2026,Boldt,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p8),P8_042,first_pass,10.1080/03050629.2025.2609092
 10.1093/isq/sqw016,ISQ,2016,Poznansky,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X022,first_pass,10.1093/isq/sqw016
-10.1111/isqu.12046,ISQ,2013,Gartzke,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X017,first_pass,10.1111/isqu.12046
+10.1111/isqu.12046,ISQ,2013,Gartzke,DEMOCRACY,first_pass,pooled,rebuilt_no_match,rebuild fails the round-2 match rule (audit 2026-11-08); previously: registry in_headline=Y (phase work_p4),X017,first_pass,10.1111/isqu.12046
 10.1111/isqu.12055,ISQ,2013,Dafoe,DEMOCRACY,first_pass,pooled,excluded_not_significant_baseline,registry in_headline=N: headline term not significant at baseline at the paper threshold (2026-10-10/11),D1;X018,first_pass,10.1111/isqu.12055
 10.1111/isqu.12113,ISQ,2014,Gartzke,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p8),P8_031,first_pass,10.1111/isqu.12113
 10.1111/isqu.12114,ISQ,2014,Park,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X020,first_pass,10.1111/isqu.12114
-10.1111/isqu.12214,ISQ,2015,Choi,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p8),P8_032,first_pass,10.1111/isqu.12214
+10.1111/isqu.12214,ISQ,2015,Choi,DEMOCRACY,first_pass,pooled,author_null,author argues a null; reported separately (audit 2026-11-08); previously: registry in_headline=Y (phase work_p8),P8_032,first_pass,10.1111/isqu.12214
 10.1111/isqu.12215,ISQ,2015,Crescenzi,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X021,first_pass,10.1111/isqu.12215
 10.1111/j.1468-2478.2006.00424.x,ISQ,2006,Oneal,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X014,first_pass,10.1111/j.1468-2478.2006.00424.x
 10.1111/j.1468-2478.2010.00627.x,ISQ,2010,Lektzian,DEMOCRACY,first_pass,pooled,excluded_not_significant_baseline,registry in_headline=N: headline term not significant at baseline at the paper threshold (2026-10-10/11),X016,first_pass,10.1111/j.1468-2478.2010.00627.x
@@ -130,7 +130,7 @@ doi,journal,year,first_author,family,source,stage_reached,final_status,reason,sw
 10.1177/0022343308096154,JPR,2008,Goldsmith,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X035,first_pass,10.1177/0022343308096154
 10.1177/0022343314567722,JPR,2015,Joshi,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X036,first_pass,10.1177/0022343314567722
 10.1177/0022343319883672,JPR,2020,Altman,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X037,first_pass,10.1177/0022343319883672
-10.1177/0738894209104554,CMPS,2009,Quackenbush,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X039,first_pass,10.1177/0738894209104554
+10.1177/0738894209104554,CMPS,2009,Quackenbush,DEMOCRACY,first_pass,pooled,rebuilt_no_match,rebuild fails the round-2 match rule (audit 2026-11-08); previously: registry in_headline=Y (phase work_p4),X039,first_pass,10.1177/0738894209104554
 10.1177/0738894209352133,CMPS,2010,Bayer,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X040,first_pass,10.1177/0738894209352133
 10.1177/0738894215616408,CMPS,2016,Mousseau,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X043,first_pass,10.1177/0738894215616408
 10.1177/1354066106069323,EJIR,2006,Goldsmith,DEMOCRACY,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X092,first_pass,10.1177/1354066106069323
@@ -343,7 +343,7 @@ doi,journal,year,first_author,family,source,stage_reached,final_status,reason,sw
 10.1080/03050629.2024.2378779,II,2024,Atkinson,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X088,first_pass,10.1080/03050629.2024.2378779
 10.1080/03050629.2026.2715473,II,2026,Isgandarov,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_p8),P8_015,first_pass,10.1080/03050629.2026.2715473
 10.1080/07388940500339209,CMPS,2005,Oneal,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X074,first_pass,10.1080/07388940500339209
-10.1080/07388940590948556,CMPS,2005,Benson,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work),78,first_pass,10.1080/07388940590948556
+10.1080/07388940590948556,CMPS,2005,Benson,TIE,first_pass,pooled,rebuilt_no_match,rebuild fails the round-2 match rule (audit 2026-11-08); previously: registry in_headline=Y (phase work),78,first_pass,10.1080/07388940590948556
 10.1080/09692290.2022.2130959,RIPE,2022,Choi,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_p8),P8_012,first_pass,10.1080/09692290.2022.2130959
 10.1080/10242694.2013.763637,DPE,2013,Goldsmith,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_p8),P8_003,first_pass,10.1080/10242694.2013.763637
 10.1086/681958,JOP,2015,Kenwick,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work),13,first_pass,10.1086/681958
@@ -365,11 +365,11 @@ doi,journal,year,first_author,family,source,stage_reached,final_status,reason,sw
 10.1111/j.1468-2508.2007.00497.x,JOP,2007,Maoz,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_p4),X059,first_pass,10.1111/j.1468-2508.2007.00497.x
 10.1111/j.1540-5907.2007.00269.x,AJPS,2007,Ward,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_net),N08;WSC2007,first_pass,10.1111/j.1540-5907.2007.00269.x
 10.1111/j.1540-5907.2008.00343.x,AJPS,2008,Salehyan,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_p9),P9_008,first_pass;gap_fill,10.1111/j.1540-5907.2008.00343.x
-10.1111/j.1540-5907.2008.00367.x,AJPS,2008,Maoz,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work),4,first_pass,10.1111/j.1540-5907.2008.00367.x
+10.1111/j.1540-5907.2008.00367.x,AJPS,2008,Maoz,TIE,first_pass,pooled,not_reproduced,did not reproduce the article (audit 2026-11-08); previously: registry in_headline=Y (phase work),4,first_pass,10.1111/j.1540-5907.2008.00367.x
 10.1111/j.1743-8594.2010.00122.x,FPA,2010,Johnson,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work),109,first_pass,10.1111/j.1743-8594.2010.00122.x
 10.1126/sciadv.1601895,SciAdv,2017,Li,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_saom),X055,first_pass,10.1126/sciadv.1601895
 10.1162/00208180151140630,IO,2001,Green,TIE,first_pass,pooled,excluded_not_significant_baseline,registry in_headline=N: headline term not significant at baseline at the paper threshold (2026-10-10/11),X082,first_pass,10.1162/00208180151140630
-10.1162/00208180151140649,IO,2001,Oneal,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work),20,first_pass,10.1162/00208180151140649
+10.1162/00208180151140649,IO,2001,Oneal,TIE,first_pass,pooled,rebuilt_no_match,rebuild fails the round-2 match rule (audit 2026-11-08); previously: registry in_headline=Y (phase work),20,first_pass,10.1162/00208180151140649
 10.1162/002081898550626,IO,1998,Russett,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work_p9),P9_028,first_pass;gap_fill,10.1162/002081898550626
 10.1177/0022002705281669,JCR,2006,Hafner-Burton,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work),118,first_pass,10.1177/0022002705281669
 10.1177/0022002706291053,JCR,2006,Maoz,TIE,first_pass,pooled,pooled,registry in_headline=Y (phase work),119,first_pass,10.1177/0022002706291053

@@ -8,6 +8,9 @@
 #   state strength and system degree count each undirected pair once; churn_alt in a combo's first covered
 #   year is dropped; checkpoints carry a schema stamp (MV_SCHEMA_VERSION)
 #   and mismatched checkpoints stop the run; the timing_fe grid holds the sample fixed across FE structures.
+# [2026-11-09] The timing_fe grid is estimated twice: with 02's canonical community and with the community
+#   detected on each layer combination (column community = "canonical" / "combo"; see the block after the
+#   checkpoint reload). Heatmap rows (i)-(j) and the timing meta-regression use MV_TFE_COMMUNITY (default combo).
 # [2026-10-12] NEW state-level grid "timing_fe" (see STATE_TFE_* below): IV timing (t, t-1, joint t and t-1)
 #   x FE structure (state+year; state+year+community) x clustering (state+year, year, state,
 #   state+year+community). Written to data/processed/robustness_specifications_timing_fe.csv and
@@ -765,6 +768,30 @@ STATE_TFE_DVS     <- c("churn_alt", "log_churn_alt", "churn", "log_churn")
 stopifnot(all(STATE_TFE_TIMINGS %in% c("t", "t1", "joint")),
           all(STATE_TFE_FE %in% c("state_year", "state_year_comm")))
 
+# ---- [2026-11-08] Wild cluster bootstrap inference for every state TWFE spec ------------------------------
+# For each FE_full_ccode_year fit (state + year FE, SEs clustered by state and year), add a row with
+# model = "FE_full_wildboot": same coefficient, p-value from fwildclusterboot::boottest() with two-way
+# clustering (ccode, year), Rademacher weights, null imposed, B = WILD_BOOT_B (same settings as 23, which
+# uses B = 9999). se is NA on these rows. Off in permutation mode; 32 compares only rows present in a draw.
+WILD_BOOT_ENABLED  <- !PERM_MODE        # Codex review: decide before the dependency checks (permutation mode never bootstraps)
+WILD_BOOT_B        <- 999L
+WILD_BOOT_SEED     <- 123L
+WILD_BOOT_ENGINE   <- "R"              # set explicitly so a changed global boottest_engine option cannot change results
+WILD_BOOT_SAMPLING <- "dqrng"
+stopifnot(is.logical(WILD_BOOT_ENABLED), WILD_BOOT_B >= 99L)
+if (WILD_BOOT_ENABLED && !requireNamespace("fwildclusterboot", quietly = TRUE))
+  stop("WILD_BOOT_ENABLED needs fwildclusterboot (already used by 23_wild_cluster_bootstrap.R)")
+if (WILD_BOOT_ENABLED && !requireNamespace("dqrng", quietly = TRUE))
+  stop("WILD_BOOT_ENABLED needs dqrng (fwildclusterboot >= 0.13 draws its weights with dqrng)")
+# Bootstrap settings and package versions go into the checkpoint stamp (Codex review), so an upgrade or a changed
+# setting cannot silently reuse old checkpoints.
+WILD_BOOT_SIGNATURE <- if (WILD_BOOT_ENABLED) paste0(
+  "wildboot B", WILD_BOOT_B, " seed", WILD_BOOT_SEED, " rademacher imposenull clustid=ccode+year",
+  " engine=", WILD_BOOT_ENGINE, " sampling=", WILD_BOOT_SAMPLING, " confint=FALSE singleton-refit",
+  " fwildclusterboot=", as.character(utils::packageVersion("fwildclusterboot")),
+  " dqrng=", as.character(utils::packageVersion("dqrng")),
+  " fixest=", as.character(utils::packageVersion("fixest"))) else "wildboot off"
+
 # ---- Belligerent-dyad rule dimension [2026-10-12] -------------------------------------------
 # Rule name = <event>_<severity>_<window>. A dyad (unordered pair) is dropped from the transition t-1 -> t
 # (from BOTH years' tie sets) if it had the event in the window:
@@ -816,7 +843,8 @@ mv_schema_string <- function() paste("2026-10-13 noPWE tfe+isolation+dedupcomm+d
                            length(all_combos), paste(EXTRA_CTRLS, collapse = ","),
                            STATE_TFE_ENABLED, paste(STATE_TFE_TIMINGS, collapse = ","),
                            paste(STATE_TFE_FE, collapse = ","), paste(STATE_TFE_CLUST, collapse = ","),
-                           paste(STATE_TFE_DVS, collapse = ","), sep = " | ")
+                           paste(STATE_TFE_DVS, collapse = ","),
+                           WILD_BOOT_SIGNATURE, sep = " | ")   # [2026-11-08]
 read_ckpt <- function(path) {
   x <- readRDS(path)
   stopifnot(!is.null(MV_SCHEMA_VERSION))
@@ -1191,6 +1219,7 @@ if ("ongoing_fatal_t1" %in% BELLIG_RULES && "churn_peace_ft1" %in% names(state_d
 if (PERM_MODE) {
   BELLIG_RULES      <- "none"           # heatmap / support shares use the all-dyads rule only
   STATE_TFE_ENABLED <- FALSE            # timing_fe grid is split out of the support shares
+  WILD_BOOT_ENABLED <- FALSE            # [2026-11-08] bootstrap rows are not part of the permutation subset
   granger_dvs       <- character(0)     # VAR / Granger / FEVD rows carry no signed coefficient
   # Fixed random subset of layer combos (same subset in every draw, including the observed draw 0).
   stopifnot(PERM_N_COMBOS >= 1, PERM_N_COMBOS <= length(all_combos))
@@ -2053,6 +2082,56 @@ for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
                   is_onset = is_onset,
                   year_start = year_start, year_end = year_end
                 )
+                # [2026-11-08] wild cluster bootstrap p for the state + year clustered TWFE fit. Called inline (not
+                # through a helper) so boottest() finds sub_data, the data the fit was estimated on. The RNG is
+                # reset to seed 123 for each call and the caller's stream is restored afterwards, so every bootstrap
+                # p is reproducible regardless of worker order and the other random draws are unaffected.
+                if (WILD_BOOT_ENABLED && clust_name == "ccode_year" && bellig_rule == "none") {   # all-dyads rule only
+                  # boottest() rejects fits whose fixest object removed FE singletons (fwildclusterboot >= 0.14;
+                  # Codex review). Refit the same formula and clustering on exactly the rows m_fe used, so the refit
+                  # removes nothing; check it reproduces m_fe's N and coefficients before bootstrapping it.
+                  boot_data <- sub_data[fixest::obs(m_fe), , drop = FALSE]
+                  m_boot <- tryCatch(feols(fml_fe, data = boot_data, vcov = clustering_schemes[["ccode_year"]]),
+                                     error = function(e) e)
+                  refit_ok <- !inherits(m_boot, "error") && is.null(m_boot$fixef_removed) &&
+                    nobs(m_boot) == nobs(m_fe) && identical(names(coef(m_boot)), names(coef(m_fe))) &&
+                    isTRUE(all.equal(unname(coef(m_boot)), unname(coef(m_fe)), tolerance = 1e-8))
+                  had_seed <- exists(".Random.seed", envir = globalenv())
+                  if (had_seed) old_seed <- get(".Random.seed", envir = globalenv())
+                  set.seed(WILD_BOOT_SEED); dqrng::dqset.seed(WILD_BOOT_SEED)
+                  bt <- if (!refit_ok) {
+                    simpleError(if (inherits(m_boot, "error")) paste("refit failed:", conditionMessage(m_boot))
+                                else "refit did not reproduce m_fe (N, coefficients or singleton removal)")
+                  } else tryCatch(
+                    fwildclusterboot::boottest(m_boot, param = iv_main, B = WILD_BOOT_B,
+                                               clustid = c("ccode", "year"),
+                                               type = "rademacher", impose_null = TRUE, nthreads = 1,
+                                               conf_int = FALSE, engine = WILD_BOOT_ENGINE,
+                                               sampling = WILD_BOOT_SAMPLING),
+                    error = function(e) e)
+                  if (had_seed) assign(".Random.seed", old_seed, envir = globalenv())
+                  rm(boot_data, m_boot)
+                  boot_ok <- !inherits(bt, "error") && is.finite(bt$p_val)
+                  if (boot_ok) stopifnot(bt$p_val >= 0, bt$p_val <= 1)
+                  out_list[[length(out_list) + 1]] <- tibble(
+                    level = "state", dv = dv, war_variable = war_var,
+                    weighting = method, transform = tfm, layers = combo_name,
+                    n_layers = length(layers_subset),
+                    model = "FE_full_wildboot",
+                    extra_control = extra_ctrl,
+                    exposure = exposure_label,
+                    fit_status = if (boot_ok) "ok" else paste("wildboot_error:",
+                                   if (inherits(bt, "error")) conditionMessage(bt) else "non-finite p"),
+                    coef = if (boot_ok) ct[iv_main, "Estimate"] else NA_real_,
+                    se = NA_real_,
+                    pval = if (boot_ok) bt$p_val else NA_real_,
+                    n_obs = nobs(m_fe),
+                    has_offensive = has_offensive, has_defensive = has_defensive,
+                    has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
+                    is_onset = is_onset,
+                    year_start = year_start, year_end = year_end
+                  )
+                }
               }
             }
           }
@@ -2420,8 +2499,344 @@ if (PERM_MODE) {
   cat(sprintf("PERMUTATION MODE: draw %d written (%d specs)\n", PERM_DRAW, nrow(pd)))
   quit(save = "no", status = 0)
 }
+# ---- [2026-11-09] Timing grid with communities detected on each layer combination -------------------------------
+# The state loop above estimates the timing_fe grid with one canonical community for every layer combination
+# (02's leiden_comm, detected on the main network: offensive + defensive alliances + IGOs). Here the grid is
+# estimated a second time with the community detected on each layer combination, with 02's algorithm and settings
+# (edge weight = unweighted sum of the combination's layers / yearly max, rounded to 4 digits, = main_weight for the
+# main combination; Leiden CPM, gamma = mean edge weight; adjacent-year Jaccard tracking, filtered, repair_chains,
+# min 0.2; seed 123; years = state-panel years in the combination's coverage window). The timing_fe CSV then holds
+# both versions (column community = "canonical" / "combo"); rows (i)-(j) of the heatmap and the timing
+# meta-regression use MV_TFE_COMMUNITY (default "combo"). This block runs after the checkpoint reload, so the main
+# grid, the canonical timing grid and their checkpoints are unchanged (no re-estimation of the main multiverse).
+# It runs before any output file is written, so a failed check leaves the previous outputs in place.
+# CHECKS: the main combination reproduces leiden_comm exactly, and its combo cells equal its canonical cells.
+# Communities are cached in data/processed/combo_communities.rds; combo-grid checkpoints in
+# CHECKPOINT_DIR/tfe_combo/ carry the run schema plus a hash of the communities (stale ones are recomputed).
+# Replaces the stand-alone 07b_community_by_combo.R (same code, validated 2026-11-09).
+if (STATE_TFE_ENABLED) {
+  suppressPackageStartupMessages(library(dynamicmultiplex))
+  stopifnot(packageVersion("dynamicmultiplex") >= "1.4.0", !PERM_MODE)
+  t_cc <- Sys.time()
+  combo_key <- function(layers) paste(gsub("layer_", "", sort(layers)), collapse = "+")
+  MAIN_KEY <- combo_key(MAIN_LAYERS)
+  stopifnot(MAIN_KEY %in% sapply(all_combos, combo_key))
+  COMM_YEARS <- sort(unique(state_data$year))
+  COMBO_WINDOWS <- setNames(lapply(all_combos, get_valid_year_range), sapply(all_combos, combo_key))
+  COMM_SETTINGS <- paste("02 two-stage DynMux: unweighted sum / yearly max, round 4; leiden cpm gamma = mean weight;",
+                         "adjacent links weight 1; filtered; repair_chains TRUE min 0.2; seed 123; dynamicmultiplex",
+                         as.character(packageVersion("dynamicmultiplex")), "igraph", as.character(packageVersion("igraph")),
+                         "| years = state-panel years in coverage window")
+detect_comm <- function(dsub, layers, years) {
+    m <- as.matrix(dsub[, layers, drop = FALSE]); m[is.na(m)] <- 0
+    raw <- rowSums(m)
+    mx  <- ave(raw, dsub$year, FUN = function(x) max(x, na.rm = TRUE))
+    dsub$w__ <- round(ifelse(mx > 0, raw / mx, 0), 4)            # = main_weight for the main combination
+    layer_list <- list(); year_map <- integer(0)
+    for (yr in years) {
+      e <- dsub[dsub$year == yr & !is.na(dsub$w__), ] |>
+        dplyr::transmute(a = pmin(ccode1, ccode2), b = pmax(ccode1, ccode2), w = w__) |>
+        dplyr::group_by(a, b) |> dplyr::summarise(w = max(w), .groups = "drop")
+      stopifnot(all(e$a != e$b), !anyDuplicated(e[c("a", "b")]))
+      if (nrow(e) < 2) next
+      g <- igraph::graph_from_data_frame(e |> dplyr::select(a, b), directed = FALSE)
+      igraph::E(g)$weight <- e$w
+      stopifnot(!any(igraph::which_multiple(g)), !any(igraph::which_loop(g)), igraph::ecount(g) == nrow(e))
+      layer_list[[length(layer_list) + 1]] <- g; year_map <- c(year_map, yr)
+    }
+    links <- data.frame(from = seq_len(length(layer_list) - 1), to = seq_len(length(layer_list) - 1) + 1, weight = 1)
+    gam <- mean(unlist(lapply(layer_list, function(g) igraph::E(g)$weight)), na.rm = TRUE)
+    # 02 runs with R's default RNG; furrr workers use L'Ecuyer-CMRG, so set the default kind before seeding
+    # (otherwise set.seed(123) would start a different stream) and restore the caller's kind afterwards.
+    old_kind <- RNGkind(); on.exit(do.call(RNGkind, as.list(old_kind)), add = TRUE)
+    RNGkind("Mersenne-Twister", "Inversion", "Rejection")
+    set.seed(123)
+    fit <- dynamicmultiplex::fit_multilayer_jaccard(layer_list, algorithm = "leiden", layer_links = links,
+             resolution_parameter = gam, objective = "cpm", directed = FALSE, seed = 123,
+             allow_unequal_nodes = TRUE, tracking = "filtered", repair_chains = TRUE, repair_min_similarity = 0.2)
+    meta <- dynamicmultiplex::extract_meta_membership(fit)
+    stopifnot(length(meta) == length(layer_list))
+    out <- dplyr::bind_rows(lapply(seq_along(meta), function(i) {
+      nm <- igraph::V(layer_list[[i]])$name
+      stopifnot(length(nm) == length(meta[[i]]), !anyNA(meta[[i]]))
+      data.frame(ccode = as.numeric(nm), year = year_map[i], leiden_comm = as.integer(meta[[i]]))
+    }))
+    stopifnot(!anyDuplicated(out[c("ccode", "year")]))
+    attr(out, "gamma") <- gam
+    out
+  }
+  
+  
+  COMM_FILE <- file.path(OUTPUT_DIR, "combo_communities.rds")
+  dyad_md5 <- unname(tools::md5sum(file.path(OUTPUT_DIR, "dyad_year_network_layers.rds")))
+  cached <- if (file.exists(COMM_FILE)) readRDS(COMM_FILE) else NULL
+  if (!is.null(cached) && identical(cached$settings, COMM_SETTINGS) && identical(cached$dyad_md5, dyad_md5) &&
+      identical(cached$years, COMM_YEARS) && identical(cached$windows, COMBO_WINDOWS) &&
+      setequal(names(cached$comm), sapply(all_combos, combo_key))) {
+    combo_comm <- cached$comm
+    cat(sprintf("  combo communities loaded from %s (%d combinations)\n", basename(COMM_FILE), length(combo_comm)))
+  } else {
+    cat(sprintf("  detecting communities on %d layer combinations (%d workers)...\n", length(all_combos), .n_workers))
+    combo_comm <- furrr::future_map(all_combos, function(layers) {
+      yr <- get_valid_year_range(layers)
+      yrs <- COMM_YEARS[COMM_YEARS >= yr[1] & COMM_YEARS <= yr[2]]
+      detect_comm(dyad_data[dyad_data$year %in% yrs, c("ccode1", "ccode2", "year", layers)], layers, yrs)
+    }, .options = furrr::furrr_options(seed = TRUE, globals = c("detect_comm", "dyad_data", "COMM_YEARS",
+                                                                  "get_valid_year_range", "layer_year_ranges")))
+    names(combo_comm) <- sapply(all_combos, combo_key)
+    saveRDS(list(comm = combo_comm, settings = COMM_SETTINGS, dyad_md5 = dyad_md5, years = COMM_YEARS,
+                 windows = COMBO_WINDOWS, created = Sys.time()), COMM_FILE)
+  }
+  chk <- state_data |> dplyr::select(ccode, year, canon = leiden_comm) |>
+    dplyr::left_join(combo_comm[[MAIN_KEY]] |> dplyr::rename(combo = leiden_comm), by = c("ccode", "year"))
+  if (anyNA(chk$combo) || !all(chk$canon == chk$combo))
+    stop(sprintf(paste("combo communities: main combination (%s) does not reproduce 02's leiden_comm (%d of %d state-years",
+                       "differ or missing). Likely igraph/dynamicmultiplex version drift or changed inputs since 02 ran."),
+                 MAIN_KEY, sum(is.na(chk$combo) | chk$canon != chk$combo), nrow(chk)))
+  cat(sprintf("  CHECK passed: main combination %s reproduces leiden_comm on all %d state-years\n", MAIN_KEY, nrow(chk)))
+  for (cb in all_combos) {
+    yr <- get_valid_year_range(cb)
+    need <- state_data |> dplyr::filter(year >= yr[1], year <= yr[2]) |> dplyr::select(ccode, year)
+    miss <- dplyr::anti_join(need, combo_comm[[combo_key(cb)]], by = c("ccode", "year"))
+    if (nrow(miss) > 0) stop(sprintf("combo communities: %s has no community for %d state-years in its window", combo_key(cb), nrow(miss)))
+  }
+  comm_summary <- dplyr::bind_rows(lapply(names(combo_comm), function(k) {
+    cc <- combo_comm[[k]] |> dplyr::inner_join(state_data |> dplyr::select(ccode, year, canon = leiden_comm), by = c("ccode", "year"))
+    by_yr <- split(cc, cc$year)
+    nmi <- sapply(by_yr, function(z) igraph::compare(z$leiden_comm, z$canon, method = "nmi"))
+    ari <- sapply(by_yr, function(z) igraph::compare(z$leiden_comm, z$canon, method = "adjusted.rand"))
+    sizes <- table(paste(cc$year, cc$leiden_comm))
+    data.frame(layers = k, gamma = attr(combo_comm[[k]], "gamma"), year_start = min(cc$year), year_end = max(cc$year),
+               state_years = nrow(cc), meta_ids = dplyr::n_distinct(cc$leiden_comm),
+               median_comm_per_year = stats::median(sapply(by_yr, function(z) dplyr::n_distinct(z$leiden_comm))),
+               share_singleton_state_years = mean(sizes[paste(cc$year, cc$leiden_comm)] == 1),
+               mean_nmi_vs_canonical = mean(nmi), mean_ari_vs_canonical = mean(ari, na.rm = TRUE),
+               years_ari_undefined = sum(is.na(ari)))
+  }))
+  readr::write_csv(comm_summary, file.path(OUTPUT_DIR, "combo_communities_summary.csv"))
+
+  # Combo timing grid: 07 block A2 with the combination's community, every weighting and belligerent rule.
+  TFE_DVS_CC <- intersect(state_dvs, STATE_TFE_DVS)
+  CC_SCHEMA <- paste(MV_SCHEMA_VERSION, "| combo communities", COMM_SETTINGS,
+                     rlang::hash(lapply(combo_comm, as.data.frame)))
+  CC_DIR <- file.path(CHECKPOINT_DIR, "tfe_combo")
+  if (Sys.getenv("ROBUSTNESS_RESET", "0") == "1" && !interactive()) unlink(CC_DIR, recursive = TRUE)
+  dir.create(CC_DIR, recursive = TRUE, showWarnings = FALSE)
+  cc_rows <- list()
+  for (tfm in STATE_TRANSFORMS) {
+    stopifnot(tfm == "raw")
+    dyad_work_state <- dyad_data
+    for (method in weighting_methods) {
+      ckpt_cc <- file.path(CC_DIR, sprintf("tfecombo__%s__%s.rds", tfm, method))
+      # schema also tied to the dyad input and to this weighting's state checkpoint (guards against stale files
+      # surviving an interrupted ROBUSTNESS_RESET run, which does not clear this subfolder until this block)
+      st_ckpt <- file.path(CHECKPOINT_DIR, sprintf("state__%s__%s.rds", tfm, method))
+      stopifnot(file.exists(st_ckpt))
+      CC_SCHEMA_M <- paste(CC_SCHEMA, "| dyad", dyad_md5, "| state ckpt", unname(tools::md5sum(st_ckpt)))
+      if (file.exists(ckpt_cc)) {
+        x <- readRDS(ckpt_cc)
+        if (identical(attr(x, "cc_schema"), CC_SCHEMA_M)) {
+          cat(sprintf("  [combo timing %s/%s] LOADED CHECKPOINT (%d rows)\n", tfm, method, nrow(x)))
+          cc_rows[[length(cc_rows) + 1]] <- x; next
+        }
+        cat(sprintf("  [combo timing %s/%s] checkpoint has a different schema; re-estimating\n", tfm, method))
+      }
+      cat(sprintf("  [combo timing %s/%s] dispatching %d combos (%d workers)...\n", tfm, method, length(all_combos), .n_workers))
+      t_m <- Sys.time()
+      res_m <- furrr::future_map_dfr(seq_along(all_combos), function(combo_idx) {
+        layers_subset <- all_combos[[combo_idx]]
+        combo_name <- paste(gsub("layer_", "", layers_subset), collapse = "+")
+        comm_cb <- combo_comm[[combo_key(layers_subset)]] |> dplyr::select(ccode, year, leiden_comm)
+        manhattan_vec <- compute_manhattan_vec(dyad_work_state, layers_subset, method)
+        churn_prep <- prep_state_churn(dyad_work_state, manhattan_vec)
+        dplyr::bind_rows(lapply(BELLIG_RULES, function(bellig_rule) {
+          out_list <- list()
+          state_dvs_df <- churn_from_prep(churn_prep, drop = bellig_drop[[bellig_rule]])
+          if (nrow(state_dvs_df) < 100) return(dplyr::bind_rows(out_list))
+          churn_merged <- state_dvs_df |>
+            dplyr::left_join(state_data |>
+                               dplyr::select(ccode, year, churn, log_churn, mid_count, fatal_mid_count,
+                                             mid_onset_count, fatal_mid_onset_count, log_mid_count, log_fatal_mid_count,
+                                             log_mid_onset_count, log_fatal_mid_onset_count, is_isolated_t1,
+                                             democracy, autocracy, cinc, major_power,
+                                             dplyr::all_of(paste0(state_war_vars, "__lag1"))) |> dplyr::distinct(),
+                             by = c("ccode", "year")) |>
+            dplyr::left_join(comm_cb, by = c("ccode", "year"))
+          if (bellig_rule != "none") {
+            churn_merged <- churn_merged |> dplyr::select(-churn, -log_churn) |>
+              dplyr::left_join(canon_churn_rule[[bellig_rule]], by = c("ccode", "year"))
+          }
+          stopifnot(!anyDuplicated(churn_merged[c("ccode", "year")]))
+          has_offensive <- "layer_offensive" %in% layers_subset; has_defensive <- "layer_defensive" %in% layers_subset
+          has_igo <- "layer_igo" %in% layers_subset; has_trade <- "layer_trade" %in% layers_subset
+          has_dca <- "layer_dca" %in% layers_subset
+          yr_range_st <- get_valid_year_range(layers_subset); year_start <- yr_range_st[1]; year_end <- yr_range_st[2]
+          churn_combo <- churn_merged |>
+            dplyr::filter(year >= year_start, year <= year_end) |>
+            dplyr::mutate(churn_alt     = dplyr::if_else(year == year_start, NA_real_, churn_alt),
+                          log_churn_alt = dplyr::if_else(year == year_start, NA_real_, log_churn_alt))
+          stopifnot(!anyNA(churn_combo$leiden_comm))
+          for (war_var in state_war_vars) {
+            iv_main <- paste0(war_var, "__lag1")
+            is_onset <- grepl("onset", war_var)
+            for (dv in TFE_DVS_CC) {
+              dv_col <- dv
+              analysis_sub <- churn_combo |> dplyr::filter(!is.na(.data[[dv_col]]), !is.na(.data[[iv_main]]))
+              if (nrow(analysis_sub) < 100) next
+              iv_control_sets <- get_control_sets(war_var)
+              for (ctrl_name in names(iv_control_sets)) {
+                controls_rhs <- iv_control_sets[[ctrl_name]]
+                exposure_label <- ctrl_name
+                # ---- block A2 (as in the state loop) ----
+                lag_col  <- paste0(war_var, "__lag1")
+                tfe_data <- analysis_sub |>
+                  dplyr::filter(!is.na(.data[[war_var]]), !is.na(.data[[lag_col]]), !is.na(leiden_comm))
+                tfe_data$iv_diff__ <- tfe_data[[lag_col]] - tfe_data[[war_var]]
+                for (it in 1:10) {
+                  n_before <- nrow(tfe_data)
+                  if (n_before < 100) break
+                  for (fe_rhs_s in c("ccode + year + leiden_comm", "ccode + year")) {
+                    fit_samp <- tryCatch(feols(as.formula(paste(dv_col, "~", war_var, "+", lag_col, "+", controls_rhs, "|", fe_rhs_s)),
+                                               data = tfe_data, vcov = "iid"), error = function(e) NULL)
+                    if (is.null(fit_samp)) {
+                      warning(sprintf("combo timing_fe: sample-fixing fit (%s) failed for %s / %s / %s; cell skipped",
+                                      fe_rhs_s, combo_name, war_var, dv))
+                      tfe_data <- tfe_data[0, ]; break
+                    }
+                    tfe_data <- tfe_data[obs(fit_samp), ]
+                  }
+                  if (nrow(tfe_data) == n_before) break
+                }
+                if (nrow(tfe_data) >= 100) {
+                  for (fe_struct in STATE_TFE_FE) {
+                    fe_rhs <- if (fe_struct == "state_year") "ccode + year" else "ccode + year + leiden_comm"
+                    fit_t  <- tryCatch(feols(as.formula(paste(dv_col, "~", war_var, "+", controls_rhs, "|", fe_rhs)),
+                                             data = tfe_data, vcov = "iid"), error = function(e) NULL)
+                    fit_t1 <- tryCatch(feols(as.formula(paste(dv_col, "~", lag_col, "+", controls_rhs, "|", fe_rhs)),
+                                             data = tfe_data, vcov = "iid"), error = function(e) NULL)
+                    fit_j  <- tryCatch(feols(as.formula(paste(dv_col, "~", war_var, "+", lag_col, "+", controls_rhs, "|", fe_rhs)),
+                                             data = tfe_data, vcov = "iid"), error = function(e) NULL)
+                    fit_s  <- tryCatch(feols(as.formula(paste(dv_col, "~", war_var, "+ iv_diff__ +", controls_rhs, "|", fe_rhs)),
+                                             data = tfe_data, vcov = "iid"), error = function(e) NULL)
+                    if (!is.null(fit_j) && !is.null(fit_s) && all(c(war_var, lag_col) %in% names(coef(fit_j))) &&
+                        war_var %in% names(coef(fit_s))) {
+                      if (!isTRUE(all.equal(unname(coef(fit_s)[[war_var]]), unname(sum(coef(fit_j)[c(war_var, lag_col)])),
+                                            tolerance = 1e-5))) {
+                        warning(sprintf("combo timing_fe: joint_sum != b_t + b_t1 for %s / %s / %s (%s); joint_sum row dropped",
+                                        combo_name, war_var, dv, fe_struct))
+                        fit_s <- NULL
+                      }
+                    }
+                    for (f_chk in list(fit_t, fit_t1, fit_j, fit_s)) {
+                      if (!is.null(f_chk)) stopifnot(nobs(f_chk) == nrow(tfe_data))
+                    }
+                    spec_terms <- list()
+                    if ("t" %in% STATE_TFE_TIMINGS)  spec_terms[[length(spec_terms) + 1]] <- list(timing = "t",  term = "t",  fit = fit_t,  var = war_var)
+                    if ("t1" %in% STATE_TFE_TIMINGS) spec_terms[[length(spec_terms) + 1]] <- list(timing = "t1", term = "t1", fit = fit_t1, var = lag_col)
+                    if ("joint" %in% STATE_TFE_TIMINGS) {
+                      spec_terms[[length(spec_terms) + 1]] <- list(timing = "joint", term = "joint_t",   fit = fit_j, var = war_var)
+                      spec_terms[[length(spec_terms) + 1]] <- list(timing = "joint", term = "joint_t1",  fit = fit_j, var = lag_col)
+                      spec_terms[[length(spec_terms) + 1]] <- list(timing = "joint", term = "joint_sum", fit = fit_s, var = war_var)
+                    }
+                    for (st in spec_terms) {
+                      if (is.null(st$fit)) next
+                      for (clust_name in STATE_TFE_CLUST) {
+                        ct <- tryCatch(coeftable(st$fit, vcov = tfe_clustering[[clust_name]]), error = function(e) NULL)
+                        if (is.null(ct) || !st$var %in% rownames(ct)) next
+                        out_list[[length(out_list) + 1]] <- tibble::tibble(
+                          level = "state", dv = dv, war_variable = war_var,
+                          weighting = method, transform = tfm, layers = combo_name,
+                          n_layers = length(layers_subset),
+                          model = paste0(if (fe_struct == "state_year") "FE_full_" else "FE_commFE_", clust_name),
+                          extra_control = "none", exposure = exposure_label,
+                          grid = "timing_fe", iv_timing = st$timing, iv_term = st$term,
+                          fe_structure = fe_struct, clustering = clust_name,
+                          coef = ct[st$var, "Estimate"], se = ct[st$var, "Std. Error"], pval = ct[st$var, "Pr(>|t|)"],
+                          n_obs = nobs(st$fit),
+                          has_offensive = has_offensive, has_defensive = has_defensive,
+                          has_igo = has_igo, has_trade = has_trade, has_dca = has_dca,
+                          is_onset = is_onset, year_start = year_start, year_end = year_end)
+                      }
+                    }
+                  }
+                }
+                # ---- end A2 ----
+              }
+            }
+          }
+          res_r <- dplyr::bind_rows(out_list)
+          if (nrow(res_r) > 0) res_r$bellig_rule <- bellig_rule
+          res_r
+        }))
+      }, .options = furrr::furrr_options(seed = TRUE))
+      stopifnot(nrow(res_m) > 0)
+      attr(res_m, "cc_schema") <- CC_SCHEMA_M
+      saveRDS(res_m, ckpt_cc)
+      cat(sprintf("    -> %d rows in %.1f min [checkpoint saved]\n", nrow(res_m), as.numeric(difftime(Sys.time(), t_m, units = "mins"))))
+      cc_rows[[length(cc_rows) + 1]] <- res_m
+    }
+  }
+  cc_df <- dplyr::bind_rows(cc_rows) |> dplyr::mutate(community = "combo")
+  rm(cc_rows); gc(verbose = FALSE)
+  specs_df <- specs_df |>
+    dplyr::mutate(community = dplyr::if_else(!is.na(grid) & grid == "timing_fe", "canonical", NA_character_))
+  # CHECKS: same cells as the canonical grid (cells drop only where sample fixing leaves < 100 state-years), and the
+  # main combination's combo cells equal its canonical cells exactly.
+  CC_KEYS <- c("dv", "war_variable", "weighting", "transform", "layers", "exposure", "iv_timing", "iv_term",
+               "fe_structure", "clustering", "bellig_rule")
+  can_cells <- specs_df |> dplyr::filter(community %in% "canonical") |>
+    dplyr::select(dplyr::all_of(CC_KEYS), coef_c = coef, n_c = n_obs)
+  stopifnot(!anyDuplicated(can_cells[CC_KEYS]), !anyDuplicated(cc_df[CC_KEYS]))
+  n_can_only <- nrow(dplyr::anti_join(can_cells, cc_df, by = CC_KEYS))
+  n_cc_only  <- nrow(dplyr::anti_join(cc_df, can_cells, by = CC_KEYS))
+  cat(sprintf("  combo timing grid: %d cells (canonical %d; canonical-only %d, combo-only %d) in %.1f min\n",
+              nrow(cc_df), nrow(can_cells), n_can_only, n_cc_only, as.numeric(difftime(Sys.time(), t_cc, units = "mins"))))
+  if (n_can_only > 0.01 * nrow(can_cells) || n_cc_only > 0.01 * nrow(can_cells))
+    stop("combo timing grid does not cover the canonical cells")
+  cov_grp <- dplyr::full_join(can_cells |> dplyr::count(layers, bellig_rule, name = "n_can"),
+                              cc_df |> dplyr::count(layers, bellig_rule, name = "n_cc"), by = c("layers", "bellig_rule")) |>
+    dplyr::mutate(n_can = dplyr::coalesce(n_can, 0L), n_cc = dplyr::coalesce(n_cc, 0L))
+  bad_grp <- cov_grp |> dplyr::filter(abs(n_can - n_cc) > 0.01 * pmax(n_can, n_cc))
+  if (nrow(bad_grp) > 0) { print(as.data.frame(bad_grp)); stop("combo timing grid: cell counts differ by more than 1% for the layer x rule groups above") }
+  m_main <- dplyr::full_join(can_cells |> dplyr::filter(layers == MAIN_KEY),
+                             cc_df |> dplyr::filter(layers == MAIN_KEY) |> dplyr::select(dplyr::all_of(CC_KEYS), coef, n_obs),
+                             by = CC_KEYS)
+  stopifnot(nrow(m_main) > 0)
+  if (anyNA(m_main$coef_c) || anyNA(m_main$coef) || any(m_main$n_c != m_main$n_obs) ||
+      !isTRUE(all.equal(m_main$coef_c, m_main$coef, tolerance = 1e-8)))
+    stop("combo timing grid: main-combination cells differ from the canonical grid (should be identical)")
+  specs_df <- dplyr::bind_rows(specs_df, cc_df)
+  rm(cc_df, can_cells, m_main); gc(verbose = FALSE)
+}
+
 # [2026-10-13] FE_full fit coverage: attempted vs estimated, by cell type. Non-"ok" rows leave the results here.
 if (!"fit_status" %in% names(specs_df)) specs_df$fit_status <- NA_character_
+
+# [2026-11-08] Split the wild bootstrap rows out of specs_df here, before the fit_status filter and the
+# belligerent-rule CSV (Codex review). A bootstrap row is a second p-value for an existing TWFE spec, not a new
+# specification, so it never enters the support shares, spec curves, FDR, meta CSVs, bellig CSV or main CSV. Failed
+# bootstraps stay in the dedicated CSV with their fit_status. One attempt is expected per successful main-grid
+# state + year clustered TWFE fit under the all-dyads rule.
+if (WILD_BOOT_ENABLED) {
+  wb_df <- specs_df |> dplyr::filter(model == "FE_full_wildboot")
+  n_eligible <- sum(specs_df$model == "FE_full_ccode_year" & specs_df$level == "state" &
+                      dplyr::coalesce(specs_df$fit_status, "ok") == "ok" & !is.na(specs_df$coef) &
+                      specs_df$bellig_rule == "none" &
+                      (if ("grid" %in% names(specs_df)) is.na(specs_df$grid) else TRUE))   # main grid, not timing_fe
+  n_wb_ok <- sum(wb_df$fit_status == "ok" & !is.na(wb_df$pval))
+  cat(sprintf("  wild bootstrap: %d attempts, %d with a p-value, for %d eligible TWFE fits\n",
+              nrow(wb_df), n_wb_ok, n_eligible))
+  if (nrow(wb_df) > n_wb_ok) print(wb_df |> dplyr::filter(fit_status != "ok") |> dplyr::count(fit_status, sort = TRUE))
+  # Write first (Codex re-review), so the diagnostics, including failed attempts, are on disk even if a guard stops the run
+  # and no stale CSV from an earlier run survives.
+  readr::write_csv(wb_df |> dplyr::select(-dplyr::any_of(c("grid", "iv_timing", "iv_term", "fe_structure", "clustering", "community"))),
+                   file.path(OUTPUT_DIR, "robustness_specifications_wildboot.csv"))
+  stopifnot(nrow(wb_df) > 0, all(wb_df$bellig_rule == "none"))
+  if (nrow(wb_df) != n_eligible) stop(sprintf("wild bootstrap: %d attempts for %d eligible TWFE fits", nrow(wb_df), n_eligible))
+  if (n_wb_ok < 0.99 * n_eligible) stop(sprintf("wild bootstrap: only %d of %d succeeded (<99%%); see fit_status above", n_wb_ok, n_eligible))
+  specs_df <- specs_df |> dplyr::filter(model != "FE_full_wildboot")
+  rm(wb_df)
+}
 fit_cov <- specs_df |>
   dplyr::filter(!is.na(fit_status)) |>
   dplyr::mutate(status = dplyr::if_else(grepl("^error:", fit_status), "error", fit_status)) |>
@@ -2443,12 +2858,12 @@ if (STATE_TFE_ENABLED) {
   tfe_specs_df <- specs_df |> dplyr::filter(!is.na(grid), grid == "timing_fe")
   if (nrow(tfe_specs_df) == 0) stop("timing_fe grid is empty: state checkpoints predate the grid; rerun with ROBUSTNESS_RESET=1")
   specs_df <- specs_df |> dplyr::filter(is.na(grid) | grid != "timing_fe") |>
-    dplyr::select(-grid, -iv_timing, -iv_term, -fe_structure, -clustering)
+    dplyr::select(-grid, -iv_timing, -iv_term, -fe_structure, -clustering, -community)
   # [2026-10-12] gzip: with the bellig_rule dimension this file has every rule (read_csv reads .gz directly)
   readr::write_csv(tfe_specs_df, file.path(OUTPUT_DIR, "robustness_specifications_timing_fe.csv.gz"))
   cat(sprintf("  timing_fe grid: %d rows -> robustness_specifications_timing_fe.csv.gz\n", nrow(tfe_specs_df)))
   print(tfe_specs_df |> dplyr::count(iv_timing, iv_term, fe_structure, clustering))
-  print(tfe_specs_df |> dplyr::count(bellig_rule))
+  print(tfe_specs_df |> dplyr::count(community, bellig_rule))
   rm(tfe_specs_df)
 }
 
@@ -2460,6 +2875,7 @@ readr::write_csv(specs_df, file.path(OUTPUT_DIR, "robustness_specifications_bell
 cat(sprintf("  bellig_rule sweep: %d rows -> robustness_specifications_bellig.csv.gz\n", nrow(specs_df)))
 print(specs_df |> dplyr::count(level, bellig_rule))
 specs_df <- specs_df |> dplyr::filter(bellig_rule == "none") |> dplyr::select(-bellig_rule)
+
 
 # `extra_control` only exists on FE_full rows (the GDP / strength / spillover dimension).
 # Every other row -- system level, no-FE classes, bivariate -- is the baseline
@@ -4501,7 +4917,12 @@ ITEM_ORDER <- c(
   "Contiguity (Euclidean)", "Contiguity (Manhattan)",
   "Distance (Euclidean)", "Distance (Manhattan)", "Unweighted",
   # (f) extra control
-  "No GDP", "Log GDP"
+  "No GDP", "Log GDP",
+  # (g)-(j) [2026-11-08]
+  "Outcome raw", "Outcome log(1 + x)",
+  "Clustered SE (state + year)", "Wild cluster bootstrap",
+  "Conflict in year t", "Conflict in year t-1", "Years t and t-1 (sum)",
+  "State + year FE", "State + year + community FE"
 )
 CAT_A <- "(a) Reconfig-\nuration measure"
 CAT_B <- "(b) Network layer\nincluded"
@@ -4509,6 +4930,10 @@ CAT_C <- "(c) Variable\ntransform"
 CAT_D <- "(d) Conflict\nmeasure"
 CAT_E <- "(e) Edge\nweighting"
 CAT_F <- "(f) Extra\ncontrol"
+CAT_G <- "(g) Outcome\nscale"                 # [2026-11-08]
+CAT_H <- "(h) Inference\n(H2 TWFE)"           # [2026-11-08]
+CAT_I <- "(i) Conflict\ntiming (H2)"          # [2026-11-08] timing grid
+CAT_J <- "(j) Fixed\neffects (H2)"            # [2026-11-08] timing grid
 
 pct <- function(x) 100 * mean(x)   # share TRUE over a non-empty logical vector
 
@@ -4561,12 +4986,69 @@ d_ctrl <- specs |>
   summarise(val = pct(sig_pos), .groups = "drop") |>
   mutate(category = CAT_F)
 
-heat <- bind_rows(d_recon, d_layer, d_trans, d_conf, d_weight, d_ctrl) |>
+# [2026-11-08] (g) outcome scale: the same specifications with the dependent variable raw or log(1 + x).
+d_scale <- specs |>
+  mutate(item = if_else(dv_logged, "Outcome log(1 + x)", "Outcome raw")) |>
+  group_by(hypothesis, item) |>
+  summarise(val = pct(sig_pos), .groups = "drop") |>
+  mutate(category = CAT_G)
+
+# [2026-11-08] (h) inference, like-for-like: state TWFE cells estimated with both the state + year clustered SE
+# and the wild cluster bootstrap p (same coefficient, different p-value).
+BOOT_KEYS <- c(setdiff(CELL_KEYS, "model"), "extra_control")
+wb <- readr::read_csv(file.path(OUTPUT_DIR, "robustness_specifications_wildboot.csv"), show_col_types = FALSE) |>
+  mutate(across(any_of(bool_cols), ~ as.logical(.x)),
+         extra_control = dplyr::coalesce(extra_control, "none"),
+         hypothesis = "H2", sig_pos = coef > 0 & (pval / 2) < 0.10,
+         dv_logged = grepl("^log_", dv), iv_is_fatal = grepl("fatal", war_variable)) |>
+  filter(!is.na(coef), !is.na(pval))
+stopifnot(nrow(wb) > 0, all(wb$model == "FE_full_wildboot"), !any(specs$model == "FE_full_wildboot"))
+boot_cells <- wb |> distinct(across(all_of(BOOT_KEYS)))
+d_inf <- bind_rows(specs |> filter(model == "FE_full_ccode_year"), wb) |>
+  semi_join(boot_cells, by = BOOT_KEYS) |>
+  mutate(item = if_else(model == "FE_full_wildboot", "Wild cluster bootstrap", "Clustered SE (state + year)")) |>
+  group_by(hypothesis, item) |>
+  summarise(val = pct(sig_pos), .groups = "drop") |>
+  mutate(category = CAT_H)
+stopifnot(all(d_inf$hypothesis == "H2"), nrow(d_inf) == 2)
+
+# [2026-11-08] (i)-(j) state timing x fixed-effects grid (kept out of specs_df and the overall bars above).
+# All-dyads rule, no extra control; the IV enters at t, at t-1, or as the t + (t-1) sum from the joint model.
+# [2026-11-09] The timing file holds two versions (community = "canonical": 02's community on the main network for
+# every layer combination; "combo": community detected on each layer combination). MV_TFE_COMMUNITY picks one
+# (default combo). A file written before 2026-11-09 has no community column and only the canonical version.
+TFE_COMMUNITY <- Sys.getenv("MV_TFE_COMMUNITY", "combo")
+stopifnot(TFE_COMMUNITY %in% c("combo", "canonical"))
+tfe <- readr::read_csv(file.path(OUTPUT_DIR, "robustness_specifications_timing_fe.csv.gz"), show_col_types = FALSE)
+if (!"community" %in% names(tfe)) {
+  if (TFE_COMMUNITY == "combo") stop("timing file has no combo-community rows (written before 2026-11-09); rerun 07 or set MV_TFE_COMMUNITY=canonical")
+  tfe$community <- "canonical"
+}
+tfe <- tfe |>
+  filter(community == TFE_COMMUNITY, bellig_rule == "none", dplyr::coalesce(extra_control, "none") == "none",
+         iv_term %in% c("t", "t1", "joint_sum"), !is.na(coef), !is.na(pval)) |>
+  mutate(hypothesis = "H2", sig_pos = coef > 0 & (pval / 2) < 0.10)
+TFE_COMM_LABEL <- if (TFE_COMMUNITY == "combo") "community detected on each layer combination" else "canonical community (main network)"
+stopifnot(nrow(tfe) > 0, all(tfe$fe_structure %in% c("state_year", "state_year_comm")))
+N_TFE <- nrow(tfe)
+d_timing <- tfe |>
+  mutate(item = dplyr::recode(iv_term, t = "Conflict in year t", t1 = "Conflict in year t-1",
+                              joint_sum = "Years t and t-1 (sum)")) |>
+  group_by(hypothesis, item) |>
+  summarise(val = pct(sig_pos), .groups = "drop") |>
+  mutate(category = CAT_I)
+d_fe <- tfe |>
+  mutate(item = if_else(fe_structure == "state_year", "State + year FE", "State + year + community FE")) |>
+  group_by(hypothesis, item) |>
+  summarise(val = pct(sig_pos), .groups = "drop") |>
+  mutate(category = CAT_J)
+
+heat <- bind_rows(d_recon, d_layer, d_trans, d_conf, d_weight, d_ctrl, d_scale, d_inf, d_timing, d_fe) |>
   # Fill the (item x hypothesis) grid so undefined combinations become NA (dash),
   # NOT a mislabeled numeric. This is what removes the stray "NA" cell.
   complete(nesting(category, item), hypothesis = HYP) |>
   mutate(
-    category   = factor(category, levels = c(CAT_A, CAT_B, CAT_C, CAT_D, CAT_E, CAT_F)),
+    category   = factor(category, levels = c(CAT_A, CAT_B, CAT_C, CAT_D, CAT_E, CAT_F, CAT_G, CAT_H, CAT_I, CAT_J)),
     item       = factor(item, levels = rev(ITEM_ORDER)),   # first listed on top
     hypothesis = factor(hypothesis, levels = HYP),
     label      = ifelse(is.na(val), "—", sprintf("%.0f", val))
@@ -4581,8 +5063,10 @@ p_heat <- ggplot(heat, aes(x = hypothesis, y = item, fill = val)) +
                        na.value = "grey90", name = "% significant positive") +
   scale_x_discrete(position = "top") +
   labs(title = "Which specification choices matter?",
-       subtitle = sprintf("Share of specifications significant-positive, by decision (H1: %s specs; H2: %s specs).\nDashes = measure not defined at that level. Row (f) compares the same models with and without log GDP.",
-                          format(N_SPEC[["H1"]], big.mark = ","), format(N_SPEC[["H2"]], big.mark = ",")),
+       subtitle = sprintf("Share of specifications significant-positive, by decision\n(H1: %s specs; H2: %s specs). Dashes = not defined at that level.\nRow (f) compares the same models with and without log GDP.",
+                          format(N_SPEC[["H1"]], big.mark = ","), format(N_SPEC[["H2"]], big.mark = ",")) |>
+         paste0(sprintf("\nRow (h) compares the same TWFE models with clustered and wild bootstrap p-values.\nRows (i)-(j) use the separate timing grid (%s specs; %s).",
+                        format(N_TFE, big.mark = ","), TFE_COMM_LABEL)),
        x = NULL, y = NULL) +
   guides(fill = guide_colorbar(barwidth = 12, barheight = 0.5, title.position = "top")) +
   theme_minimal(base_size = 11) +
@@ -4633,7 +5117,7 @@ p_bar <- ggplot(overall, aes(x = share, y = hypothesis, fill = outcome)) +
 
 p_fig1 <- p_heat + p_bar + plot_layout(widths = c(1.35, 1))
 ggsave(file.path(FIG_DIR, "fig_multiverse_hypotheses.png"), p_fig1,
-       width = 13, height = 8.5, dpi = 400, bg = "white")
+       width = 13, height = 11, dpi = 400, bg = "white")   # [2026-11-08] taller for rows (g)-(j)
 cat("  -> fig_multiverse_hypotheses.png\n")
 
 # ===========================================================================
@@ -4643,7 +5127,7 @@ cat("  -> fig_multiverse_hypotheses.png\n")
 #    meta-regression coefficients read as SD-unit shifts in the downstream
 #    estimate and are comparable within each facet.
 # ===========================================================================
-meta_df <- specs |>   # [2026-11-05] all specs; GDP enters as the extra_ctl indicator
+meta_df <- bind_rows(specs, wb) |>   # [2026-11-05] all specs; GDP enters as extra_ctl. [2026-11-08] + bootstrap rows (H2 inference term)
   group_by(hypothesis) |>
   mutate(coef_z = as.numeric(scale(coef))) |>
   ungroup() |>
@@ -4657,7 +5141,8 @@ meta_df <- specs |>   # [2026-11-05] all specs; GDP enters as the extra_ctl indi
          drop_igo       = !has_igo,
          add_trade      = has_trade,
          neglog10p      = -log10(pmax(pval, 1e-300)),   # significance, continuous
-         sig_num        = as.integer(sig_pos))          # 0/1 for the LPM
+         sig_num        = as.integer(sig_pos),          # 0/1 for the LPM
+         dv_log         = dv_logged)                    # [2026-11-08] outcome scale, raw = baseline
 
 # Reference = the MAIN specification for each hypothesis, so the intercept IS the
 # main model and every coefficient reads as a deviation from it:
@@ -4698,7 +5183,8 @@ run_meta <- function(df, hyp) {
              keep("drop_offensive", df$drop_offensive),
              keep("drop_defensive", df$drop_defensive),
              keep("drop_igo", df$drop_igo), keep("add_trade", df$add_trade),
-             keep("extra_ctl", df$extra_ctl))   # [2026-10-13]
+             keep("extra_ctl", df$extra_ctl),   # [2026-10-13]
+             keep("dv_log", df$dv_log))         # [2026-11-08]
   rhs <- paste(preds, collapse = " + ")
   
   # THREE downstream outcomes, same predictors, same main-spec baseline:
@@ -4726,7 +5212,8 @@ model_labels <- c(
   FE_full_ccode_only  = "Model: Unit FE only",
   full_noFE           = "Model: No FE (full controls)",
   full_noFE_year_poly = "Model: No FE + year poly",
-  baseline_noFE       = "Model: Baseline (no FE)"
+  baseline_noFE       = "Model: Baseline (no FE)",
+  FE_full_wildboot    = "Inference: Wild cluster bootstrap"   # [2026-11-08]
 )
 
 clean_term <- function(t) dplyr::case_when(
@@ -4745,12 +5232,45 @@ clean_term <- function(t) dplyr::case_when(
   t == "add_tradeTRUE"             ~ "Add trade",
   str_starts(t, "recon")           ~ paste0("Measure: ", str_remove(t, "^recon")),
   str_starts(t, "extra_ctl")       ~ paste0("Extra control: ", str_remove(t, "^extra_ctl")),
+  t == "dv_logTRUE"                ~ "Outcome: log(1+x)",                 # [2026-11-08]
+  t == "timing_ft"                 ~ "Timing: conflict in year t",        # [2026-11-08] timing grid terms
+  t == "timing_fjoint_sum"         ~ "Timing: years t and t-1 (sum)",
+  t == "fe_fstate_year_comm"       ~ "FE: add community FE",
+  t == "clust_fyear_only"          ~ "Cluster: year only",
+  t == "clust_fccode_only"         ~ "Cluster: state only",
+  t == "clust_fccode_year_comm"    ~ "Cluster: state + year + community",
   TRUE ~ t
 )
 
 meta_coef <- purrr::imap_dfr(split(meta_df, meta_df$hypothesis),
                              ~ run_meta(.x, .y) |> mutate(hypothesis = .y)) |>
   mutate(term_clean = clean_term(term))
+
+# [2026-11-08] Meta-regression on the state timing x FE grid (rows (i)-(j) of the heatmap). Reference = the main
+# specification: IV at t-1, state + year FE, SEs clustered by state and year, fatal MIDs, churn, unweighted, main layers.
+tfe_meta <- tfe |>
+  mutate(coef_z = as.numeric(scale(coef)),
+         neglog10p = -log10(pmax(pval, 1e-300)), sig_num = as.integer(sig_pos),
+         conflict = relevel_to(if_else(grepl("fatal", war_variable), "Fatal MIDs", "All MIDs"), "Fatal MIDs"),
+         recon = relevel_to(dv_measure[dv], "Churn"),
+         dv_log = grepl("^log_", dv),
+         weighting = relevel_to(weighting, "unweighted"),
+         timing_f = relevel_to(iv_term, "t1"),
+         fe_f = relevel_to(fe_structure, "state_year"),
+         clust_f = relevel_to(clustering, "ccode_year"),
+         drop_offensive = !has_offensive, drop_defensive = !has_defensive,
+         drop_igo = !has_igo, add_trade = has_trade)
+stopifnot(!anyNA(tfe_meta$coef_z), !anyNA(tfe_meta$recon))
+keep_v <- function(nm) if (length(unique(stats::na.omit(tfe_meta[[nm]]))) > 1) nm else NULL
+tfe_rhs <- paste(unlist(lapply(c("timing_f", "fe_f", "clust_f", "weighting", "conflict", "recon", "dv_log",
+                                 "drop_offensive", "drop_defensive", "drop_igo", "add_trade"), keep_v)), collapse = " + ")
+stopifnot(grepl("timing_f", tfe_rhs), grepl("fe_f", tfe_rhs))
+meta_coef_tfe <- bind_rows(
+  tidy_wald(lm(as.formula(paste("coef_z ~", tfe_rhs)), data = tfe_meta)) |> mutate(outcome = "Coefficient (SD)"),
+  tidy_wald(lm(as.formula(paste("neglog10p ~", tfe_rhs)), data = tfe_meta)) |> mutate(outcome = "-log10(p-value)"),
+  tidy_wald(lm(as.formula(paste("sig_num ~", tfe_rhs)), data = tfe_meta)) |> mutate(outcome = "P(significant-positive)")
+) |> mutate(hypothesis = "H2 timing grid", term_clean = clean_term(term))
+meta_coef <- bind_rows(meta_coef, meta_coef_tfe)
 
 # Order y-axis terms by decision category (model -> transform -> weighting ->
 # conflict -> measure -> layers), consistent across all facets.
@@ -4766,7 +5286,7 @@ term_levels <- meta_coef |> distinct(term_clean) |>
   mutate(r = cat_rank(term_clean)) |> arrange(r, term_clean) |> pull(term_clean)
 
 meta_coef <- meta_coef |>
-  mutate(hypothesis = factor(hypothesis, levels = HYP),
+  mutate(hypothesis = factor(hypothesis, levels = c(HYP, "H2 timing grid")),   # [2026-11-08]
          term_clean = factor(term_clean, levels = rev(term_levels)),
          outcome    = factor(outcome, levels = c("Coefficient (SD)",
                                                  "-log10(p-value)",
@@ -4796,7 +5316,7 @@ p_fig2 <- ggplot(meta_coef, aes(x = estimate, y = term_clean)) +
         plot.subtitle = element_text(color = "gray30", size = 8.5))
 
 ggsave(file.path(FIG_DIR, "fig_multiverse_meta_by_hyp.png"), p_fig2,
-       width = 13, height = 11, dpi = 400, bg = "white")
+       width = 13, height = 14, dpi = 400, bg = "white")   # [2026-11-08] third row (timing grid)
 cat("  -> fig_multiverse_meta_by_hyp.png\n")
 
 cat("\nDone. Overall support by hypothesis (one-sided positive, p<0.10):\n")

@@ -1,7 +1,9 @@
 # 91_figures.R -- contamination figures, built in memory from est_<id>.rds + registry.csv (no study table written).
 #   Main text: results/main/fig_contamination_ties.{pdf,png} (ties; labels the five pre-specified network papers,
-#              the five most-cited network-measure studies, registry named_illustration == "Y").
+#              the five most-cited network-measure studies, registry named_illustration == "Y"; four since 2026-11-08).
 #   Appendix:  results/appendix/fig_contamination_{democracy,capitalism}.{pdf,png} (no study labels).
+#   Appendix:  results/appendix/fig_contamination_all_attempts.{pdf,png} [2026-11-08]: pooled studies plus every attempt kept out
+#              of the pool (failed rebuilds, not reproduced, null on the common sample, author nulls); no study labels.
 # Panel A: |z| of the key coefficient in the published specification vs z with conflict-history controls.
 # Panel B: coefficient ratio (after / before) for history, the lagged-CINC placebo and the joint-democracy benchmark.
 suppressPackageStartupMessages({library(ggplot2); library(dplyr); library(patchwork)})
@@ -17,6 +19,8 @@ extra <- setdiff(sub("^est_(.*)\\.rds$", "\\1", list.files(EST, pattern = "^est_
 if (length(extra)) stop("est files for studies not in this run: ", paste(extra, collapse = ", "))
 est <- bind_rows(lapply(f, function(x) { e <- readRDS(x); e$row_id <- as.character(e$row_id); e }))
 stopifnot(!anyDuplicated(est$row_id))
+stopifnot("pool_status" %in% names(reg),
+          all((reg$pool_status == "main") == (reg$study_headline_term == "Y" & reg$in_headline == "Y")))
 D <- reg %>% filter(id %in% ids, study_headline_term == "Y", in_headline == "Y") %>%
   select(row_id, id, family, short_cite, named_illustration, citations_openalex, alpha_pub) %>%
   mutate(alpha_pub = as.numeric(alpha_pub)) %>%
@@ -54,7 +58,8 @@ TH <- theme_minimal(base_size = 14) + theme(panel.grid.minor = element_blank(), 
 top5 <- data.frame(short_cite = c("Hafner-Burton & Montgomery 2006", "Maoz et al. 2007", "Maoz 2009", "Kinne 2012", "Maoz et al. 2006"),
                    hj = c(0, 1, 0, 0, 0), lx = c(0.2, 7.6, 5.9, 0.2, 5.9), ly = c(6.4, 8, 1.35, 5.4, -0.9))
 lab <- d %>% inner_join(top5, by = "short_cite")
-if (FAM == "TIE") stopifnot(nrow(lab) == 5, all(lab$named_illustration == "Y"), setequal(lab$id, D$id[D$named_illustration == "Y"])) else lab <- lab[0, ]
+# [2026-11-08] Maoz 2009 left the pool (not reproduced), so four of the five pre-specified papers are labelled; the rule is not refilled
+if (FAM == "TIE") stopifnot(nrow(lab) == 4, all(lab$named_illustration == "Y"), setequal(lab$id, D$id[D$named_illustration == "Y"])) else lab <- lab[0, ]
 
 # Figure note (Codex fix 2026-10-11; analysis unchanged): the shaded band marks |z| < 1.96, a fixed .05 visual reference only.
 # Status colours are classified with each paper's own threshold (registry alpha_pub, .05 or .10), so a point can sit inside the
@@ -112,3 +117,59 @@ PDF_DEV <- tryCatch({ tf <- tempfile(fileext = ".pdf"); cairo_pdf(tf); grDevices
                     warning = function(w) grDevices::pdf, error = function(e) grDevices::pdf)
 ggsave(file.path(OUTDIR, paste0(STEM, ".pdf")), fig, width = 12, height = 6.8, device = PDF_DEV)
 }
+
+# ---- [2026-11-08] appendix: all attempts, including those kept out of the pool ----
+# Same panel A design as above, one facet per family. Colour = how the study entered (or did not enter) the pool; shape = what
+# happens to the key term with conflict history at the paper's own threshold. Out of scope, duplicates, methods-paper
+# reanalyses and non-comparable estimands are not plotted (they do not test the article's headline claim).
+GRP <- c(main = "Pooled", rebuild_outside_rule = "Rebuilt, fails the round-2 match rule", not_reproduced = "Not reproduced",
+         null_common_sample = "Null on the common sample\nbefore adding history", author_null = "Author argues a null")
+GPAL <- setNames(c("#2a78d6", "#eb6834", "#8a2be2", "grey55", "#1a9e77"), GRP)
+FLAB <- c(TIE = "Ties", DEMOCRACY = "Democratic peace", CAPITALISM = "Capitalist peace")
+DA <- reg %>% filter(id %in% ids, study_headline_term == "Y", pool_status %in% names(GRP)) %>%
+  select(row_id, id, family, pool_status, alpha_pub) %>% mutate(alpha_pub = as.numeric(alpha_pub)) %>%
+  inner_join(est %>% select(row_id, b0, p0, b_hist, p_hist), by = "row_id")
+stopifnot(!anyDuplicated(DA$id), all(is.finite(DA$b0)), all(is.finite(DA$b_hist)), !anyNA(DA$p0), !anyNA(DA$p_hist))
+ZC <- 8
+zf <- function(b, p) pmin(abs(qnorm(pmax(p, 1e-300) / 2)), ZC)
+SH <- c(stay = "Significant before and after", lose = "Loses significance", flip = "Significant, sign flips",
+        gain = "Becomes significant", none = "Not significant before or after")
+DA <- DA %>% mutate(
+  z0 = zf(b0, p0), zh = zf(b_hist, p_hist) * sign(b_hist) * sign(b0),
+  sig0 = p0 < alpha_pub, sigh = p_hist < alpha_pub,
+  out = case_when(sig0 & !sigh ~ "lose", sig0 & sign(b_hist) != sign(b0) ~ "flip", sig0 ~ "stay", sigh ~ "gain", TRUE ~ "none"),
+  grp = factor(GRP[pool_status], GRP), out = factor(SH[out], SH),
+  fam = factor(FLAB[family], FLAB[FLAB %in% FLAB[unique(family)]]),
+  zh = pmax(zh, -3)) %>%                      # bottom of the axis reads "-3 or below" (same lower limit as panel A above)
+  arrange(desc(pool_status == "main"))   # excluded attempts drawn on top
+ca <- DA %>% count(fam, grp, .drop = FALSE); cat("ALL ATTEMPTS plotted:\n"); print(as.data.frame(ca))
+# caption counts: attempts whose author claims an effect (author nulls left out), significant at baseline, changed with history
+cc <- DA %>% filter(pool_status != "author_null") %>% group_by(fam) %>%
+  summarise(k = n(), s = sum(sig0), ch = sum(sig0 & (!sigh | sign(b_hist) != sign(b0))), .groups = "drop")
+pc <- DA %>% filter(family == "TIE", pool_status == "main")
+CAP <- paste0("All attempts whose author claims an effect, significant at baseline, that lose significance or flip sign: ",
+              paste(sprintf("%s %d of %d", cc$fam, cc$ch, cc$s), collapse = "; "),
+              sprintf(" (pooled ties: %d of %d).", sum(pc$sig0 & (!pc$sigh | sign(pc$b_hist) != sign(pc$b0))), sum(pc$sig0)),
+              "\nShaded band: |z| < 1.96 (.05 reference). Colours and shapes use each paper's own threshold (alpha_pub).")
+pAll <- ggplot(DA, aes(z0, zh)) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = -1.96, ymax = 1.96, fill = "grey92") +
+  annotate("rect", xmin = 0, xmax = 1.96, ymin = -Inf, ymax = Inf, fill = "grey92", alpha = .6) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, colour = "grey40") +
+  geom_hline(yintercept = 0, colour = "grey70") +
+  geom_point(aes(colour = grp, shape = out), size = 2.6, alpha = .85, stroke = .9) +
+  facet_wrap(~ fam, nrow = 1) +
+  scale_colour_manual(values = GPAL, name = NULL, drop = FALSE, guide = guide_legend(order = 1, nrow = 2, override.aes = list(size = 3, shape = 16))) +
+  scale_shape_manual(values = setNames(c(16, 17, 4, 1, 0), SH), name = NULL, drop = FALSE,
+                     guide = guide_legend(order = 2, nrow = 2, override.aes = list(size = 3))) +
+  scale_x_continuous(limits = c(0, ZC + 0.3), breaks = c(0, 2, 4, 6, 8), labels = c("0", "2", "4", "6", "8+")) +
+  scale_y_continuous(limits = c(-3, ZC + 0.3), breaks = c(-3, -2, 0, 2, 4, 6, 8), labels = c("<= -3", "-2", "0", "2", "4", "6", "8+")) +
+  labs(title = sprintf("Significance of the key coefficient, all replication attempts (%d studies)", nrow(DA)),
+       x = "|z|, published specification (common sample)", y = "z with conflict-history controls\n(sign relative to baseline)",
+       caption = CAP) +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.minor = element_blank(), plot.title = element_text(face = "bold", size = 15), legend.position = "bottom",
+        legend.box = "vertical", plot.caption = element_text(hjust = 0, size = 10), plot.caption.position = "plot",
+        strip.text = element_text(face = "bold", size = 13))
+ADIR <- file.path(PIPE, "results", "appendix"); dir.create(ADIR, recursive = TRUE, showWarnings = FALSE)
+ggsave(file.path(ADIR, "fig_contamination_all_attempts.png"), pAll, width = 13, height = 6.6, dpi = 200, bg = "white")
+ggsave(file.path(ADIR, "fig_contamination_all_attempts.pdf"), pAll, width = 13, height = 6.6, device = PDF_DEV)

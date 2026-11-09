@@ -25,6 +25,13 @@ est <- bind_rows(lapply(f, function(x) { e <- readRDS(x); e$row_id <- as.charact
 stopifnot(!anyDuplicated(est$row_id), setequal(est$row_id, reg$row_id[reg$id %in% ids]))
 
 stopifnot(all(reg$alpha_pub %in% c("0.05", "0.10")))   # per-paper threshold for the headline claim (alpha_pub_coding.csv)
+# [2026-11-08] pool_status (headline rows): main = pooled (in_headline Y); the others are reported only in the all-attempts
+# counts below and the appendix all-attempts figure (91_figures.R). Values set by apply_pool_status_20261108.py.
+POOL_STATUS <- c("main", "author_null", "rebuild_outside_rule", "not_reproduced", "null_common_sample",
+                 "not_comparable", "methods_reanalysis", "out_of_scope", "duplicate")
+hr <- reg$study_headline_term == "Y"
+stopifnot("pool_status" %in% names(reg), all(reg$pool_status[hr] %in% POOL_STATUS), all(reg$pool_status[!hr] == ""),
+          all((reg$pool_status[hr] == "main") == (reg$in_headline[hr] == "Y")))
 d <- reg %>% filter(id %in% ids, study_headline_term == "Y", in_headline == "Y") %>%
   select(row_id, id, family, tie_type, citations_openalex, alpha_pub) %>%
   inner_join(est %>% select(-id, -key_term), by = "row_id") %>%
@@ -81,6 +88,33 @@ S_list <- readRDS(file.path(EST, "summary_stats.rds")); S_list$topline <- TOP
 saveRDS(S_list, file.path(EST, "summary_stats.rds"))
 cat("\nTOPLINE (changed = significant at baseline -> null, or significant with opposite sign)\n")
 print(TOP, digits = 3, row.names = FALSE)
+
+# ---- [2026-11-08] all attempts: pooled studies plus the attempts kept out of the pool ----
+# Included: main, rebuild_outside_rule (rebuild fails the round-2 rule: sign, significance or 0.5-2x magnitude), not_reproduced, null_common_sample (headline term not
+# significant on the common sample before history is added), author_null (author argues a null; asked only whether the term is
+# significant with history). Not included: not_comparable, methods_reanalysis, out_of_scope, duplicate.
+# "changed" uses the same rule as the topline; "gain" = not significant at baseline, significant with history.
+ATT <- c("main", "rebuild_outside_rule", "not_reproduced", "null_common_sample", "author_null")
+da <- reg %>% filter(id %in% ids, study_headline_term == "Y", pool_status %in% ATT) %>%
+  select(row_id, id, family, pool_status, alpha_pub) %>%
+  inner_join(est %>% select(row_id, b0, p0, b_hist, p_hist), by = "row_id") %>%
+  mutate(alpha_pub = as.numeric(alpha_pub), sig0 = p0 < alpha_pub, sigh = p_hist < alpha_pub,
+         lose = sig0 & !sigh, flip = sig0 & sigh & sign(b_hist) != sign(b0), changed = lose | flip, gain = !sig0 & sigh)
+stopifnot(!anyDuplicated(da$id), all(is.finite(da$b0)), all(is.finite(da$b_hist)), !anyNA(da$p0), !anyNA(da$p_hist),
+          all(!da$sig0[da$pool_status == "null_common_sample"]),
+          setequal(da$row_id[da$pool_status == "main"], d$row_id))
+att1 <- function(x) data.frame(attempts = nrow(x), sig_baseline = sum(x$sig0), changed = sum(x$changed), to_null = sum(x$lose),
+                               sig_flip = sum(x$flip), gain_sig = sum(x$gain))
+AT <- bind_rows(
+  da %>% group_by(family, pool_status) %>% group_modify(~ att1(.x)) %>% ungroup(),
+  # every attempt whose author claims an effect (author_null left out): main + failed rebuilds + not reproduced + null at baseline
+  da %>% filter(pool_status != "author_null") %>% group_by(family) %>% group_modify(~ att1(.x)) %>% ungroup() %>%
+    mutate(pool_status = "all attempts (excl. author null)")) %>%
+  mutate(share_changed = ifelse(sig_baseline > 0, changed / sig_baseline, NA_real_)) %>% arrange(family, pool_status)
+S_list <- readRDS(file.path(EST, "summary_stats.rds")); S_list$all_attempts <- AT
+saveRDS(S_list, file.path(EST, "summary_stats.rds"))
+cat("\nALL ATTEMPTS (share_changed = changed / significant at baseline, each paper's own threshold)\n")
+print(as.data.frame(AT), digits = 3, row.names = FALSE)
 
 # ---- study-level file for checking (keyed by id only) ----
 L <- d %>% transmute(row_id, id, family, tie_type, author_history, interaction = interaction_hand, alpha_pub,
