@@ -116,6 +116,19 @@ L <- dyad_data |>
     tie_multiplex = norm_year(layer_offensive + layer_defensive + layer_igo, year)
   )
 
+# [2026-11-10] CALENDAR-YEAR lags and leads. lag_yr(x, k, year) returns x from year t-k of the SAME unit (call
+# inside group_by(unit)), not the k-th previous row. Units drop out of the panel (e.g., states occupied in WWII), and a
+# row lag then reached back past the stated window (128 of 15,318 state-years in the monadic t-2..t-6 window).
+# Years absent for the unit return `default` (0 for conflict counts, NA otherwise, as before).
+lag_yr <- function(x, k, year, default = NA) {
+  stopifnot("lag_yr: duplicate years within a unit" = !anyDuplicated(year))
+  idx <- match(year - k, year)
+  out <- x[idx]
+  if (!is.na(default)) out[is.na(idx)] <- default
+  out
+}
+lead_yr <- function(x, k, year, default = NA) lag_yr(x, -k, year, default)
+
 ties <- L |>
   # [2026-11-10] FIX: transmute evaluates sequentially, so the old line set ccode2 = pmax(new ccode1, ccode2) = ccode2
   # and turned every row with ccode1 > ccode2 into a self-dyad. Asymmetric (offensive) alliance ties were lost.
@@ -132,7 +145,7 @@ d <- d |>
   mutate(across(starts_with("tie_"), ~ replace_na(.x, 0))) |>
   arrange(dyad_id, year) |>
   group_by(dyad_id) |>
-  mutate(across(starts_with("tie_"), ~ dplyr::lag(.x, 1), .names = "{.col}_lag")) |>
+  mutate(across(starts_with("tie_"), ~ lag_yr(.x, 1, year), .names = "{.col}_lag")) |>
   ungroup()
 
 # ===========================================================================
@@ -143,16 +156,16 @@ cat("Building conflict history (t-2..t-6) and its counterfactuals...\n")
 # Matrix-free windowed sums. rowSums(sapply(...)) errors on single-row groups
 # (a state/dyad present for one year), where sapply returns a vector not a
 # matrix. Reduce over a list is size-safe.
-lag_sum  <- function(x, ks) Reduce(`+`, lapply(ks, function(k) dplyr::lag(x, k, default = 0)))
-lead_sum <- function(x, ks) Reduce(`+`, lapply(ks, function(k) dplyr::lead(x, k, default = 0)))
+lag_sum  <- function(x, ks, year) Reduce(`+`, lapply(ks, function(k) lag_yr(x, k, year, 0)))
+lead_sum <- function(x, ks, year) Reduce(`+`, lapply(ks, function(k) lead_yr(x, k, year, 0)))
 
 # --- dyadic: did i and j fight EACH OTHER?
 d <- d |>
   arrange(dyad_id, year) |>
   group_by(dyad_id) |>
   mutate(
-    dyad_hist_past   = lag_sum(cowmidonset, 2:6),    # (main)
-    dyad_hist_future = lead_sum(cowmidonset, 2:6)    # (C) diagnostic
+    dyad_hist_past   = lag_sum(cowmidonset, 2:6, year),    # (main)
+    dyad_hist_future = lead_sum(cowmidonset, 2:6, year)    # (C) diagnostic
   ) |>
   ungroup()
 
@@ -162,8 +175,8 @@ state_hist <- state_churn |>
   select(ccode, year, mid_onset_count) |>
   arrange(ccode, year) |>
   group_by(ccode) |>
-  mutate(mon_past   = lag_sum(mid_onset_count, 2:6),
-         mon_future = lead_sum(mid_onset_count, 2:6)) |>
+  mutate(mon_past   = lag_sum(mid_onset_count, 2:6, year),
+         mon_future = lead_sum(mid_onset_count, 2:6, year)) |>
   ungroup() |>
   select(ccode, year, mon_past, mon_future)
 

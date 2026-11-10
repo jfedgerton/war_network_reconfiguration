@@ -235,13 +235,26 @@ cat(sprintf("      = %s cells\n", format(n_cells, big.mark = ",")))
 # ===========================================================================
 # Built once per history window and reused across every layer cell -- it does
 # not depend on the network measure.
+# [2026-11-10] CALENDAR-YEAR lags and leads. lag_yr(x, k, year) returns x from year t-k of the SAME unit (call
+# inside group_by(unit)), not the k-th previous row. Units drop out of the panel (e.g., states occupied in WWII), and a
+# row lag then reached back past the stated window (128 of 15,318 state-years in the monadic t-2..t-6 window).
+# Years absent for the unit return `default` (0 for conflict counts, NA otherwise, as before).
+lag_yr <- function(x, k, year, default = NA) {
+  stopifnot("lag_yr: duplicate years within a unit" = !anyDuplicated(year))
+  idx <- match(year - k, year)
+  out <- x[idx]
+  if (!is.na(default)) out[is.na(idx)] <- default
+  out
+}
+lead_yr <- function(x, k, year, default = NA) lag_yr(x, -k, year, default)
+
 state_churn <- readRDS(file.path(OUTPUT_DIR, "state_network_churn.rds"))
 
 # Matrix-free windowed lag sum. rowSums(sapply(...)) collapses to a plain
 # vector -- and then errors -- for single-row groups (a state or dyad present
 # for one year only, e.g. ccode 511). Reduce over a list is size-safe.
-lag_sum <- function(x, ks) {
-  Reduce(`+`, lapply(ks, function(k) dplyr::lag(x, k, default = 0)))
+lag_sum <- function(x, ks, year) {
+  Reduce(`+`, lapply(ks, function(k) lag_yr(x, k, year, 0)))
 }
 
 build_state_hist <- function(lags) {
@@ -249,7 +262,7 @@ build_state_hist <- function(lags) {
     select(ccode, year, mid_onset_count) |>
     arrange(ccode, year) |>
     group_by(ccode) |>
-    mutate(mid_hist = lag_sum(mid_onset_count, lags)) |>
+    mutate(mid_hist = lag_sum(mid_onset_count, lags, year)) |>
     ungroup() |>
     select(ccode, year, mid_hist)
 }
@@ -260,7 +273,7 @@ build_dyad_hist <- function(dat, lags) {
   dat |>
     arrange(dyad_id, year) |>
     group_by(dyad_id) |>
-    mutate(dyad_hist = lag_sum(cowmidonset, lags)) |>
+    mutate(dyad_hist = lag_sum(cowmidonset, lags, year)) |>
     ungroup()
 }
 DYAD_HIST <- lapply(MV_HIST, function(lags) {
@@ -297,7 +310,7 @@ run_tie_cell <- function(layers_subset, method, tfm, dyad_work) {
     mutate(tie = replace_na(tie, 0)) |>
     arrange(dyad_id, year) |>
     group_by(dyad_id) |>
-    mutate(tie_lag = dplyr::lag(tie, 1)) |>
+    mutate(tie_lag = lag_yr(tie, 1, year)) |>
     ungroup()
 
   out <- list()

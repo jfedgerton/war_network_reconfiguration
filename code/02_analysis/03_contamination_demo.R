@@ -78,6 +78,19 @@ d$peace_years <- d[[py_col]]
 # ===========================================================================
 # 2. THE THREE TIE MEASURES (the layers of the multiplex network)
 # ===========================================================================
+# [2026-11-10] CALENDAR-YEAR lags and leads. lag_yr(x, k, year) returns x from year t-k of the SAME unit (call
+# inside group_by(unit)), not the k-th previous row. Units drop out of the panel (e.g., states occupied in WWII), and a
+# row lag then reached back past the stated window (128 of 15,318 state-years in the monadic t-2..t-6 window).
+# Years absent for the unit return `default` (0 for conflict counts, NA otherwise, as before).
+lag_yr <- function(x, k, year, default = NA) {
+  stopifnot("lag_yr: duplicate years within a unit" = !anyDuplicated(year))
+  idx <- match(year - k, year)
+  out <- x[idx]
+  if (!is.na(default)) out[is.na(idx)] <- default
+  out
+}
+lead_yr <- function(x, k, year, default = NA) lag_yr(x, -k, year, default)
+
 cat("Building alliance / IGO / multiplex tie measures...\n")
 
 dyad_data <- readRDS(file.path(OUTPUT_DIR, "dyad_year_network_layers.rds"))
@@ -121,7 +134,7 @@ d <- d |>
   mutate(across(starts_with("tie_"), ~ replace_na(.x, 0))) |>
   arrange(dyad_id, year) |>
   group_by(dyad_id) |>
-  mutate(across(starts_with("tie_"), ~ lag(.x, 1), .names = "{.col}_lag")) |>
+  mutate(across(starts_with("tie_"), ~ lag_yr(.x, 1, year), .names = "{.col}_lag")) |>
   ungroup()
 
 cat(sprintf("  tie > 0:  alliance %.1f%% | IGO %.1f%% | multiplex %.1f%%\n",
@@ -142,9 +155,9 @@ d <- d |>
   arrange(dyad_id, year) |>
   group_by(dyad_id) |>
   mutate(dyad_mid_5yr_lag =
-           lag(cowmidonset, 2, default = 0) + lag(cowmidonset, 3, default = 0) +
-           lag(cowmidonset, 4, default = 0) + lag(cowmidonset, 5, default = 0) +
-           lag(cowmidonset, 6, default = 0)) |>
+           lag_yr(cowmidonset, 2, year, 0) + lag_yr(cowmidonset, 3, year, 0) +
+           lag_yr(cowmidonset, 4, year, 0) + lag_yr(cowmidonset, 5, year, 0) +
+           lag_yr(cowmidonset, 6, year, 0)) |>
   ungroup()
 
 # (b) MONADIC: each state's own wars
@@ -155,9 +168,9 @@ state_hist <- state_churn |>
   arrange(ccode, year) |>
   group_by(ccode) |>
   mutate(mid_5yr_lag =
-           lag(mid_onset_count, 2, default = 0) + lag(mid_onset_count, 3, default = 0) +
-           lag(mid_onset_count, 4, default = 0) + lag(mid_onset_count, 5, default = 0) +
-           lag(mid_onset_count, 6, default = 0)) |>
+           lag_yr(mid_onset_count, 2, year, 0) + lag_yr(mid_onset_count, 3, year, 0) +
+           lag_yr(mid_onset_count, 4, year, 0) + lag_yr(mid_onset_count, 5, year, 0) +
+           lag_yr(mid_onset_count, 6, year, 0)) |>
   ungroup() |>
   select(ccode, year, mid_5yr_lag)
 
@@ -224,9 +237,9 @@ d <- d |>
 # ===========================================================================
 cat("Building benchmark histories (capability + regime shifts, t-2 .. t-6)...\n")
 
-lag5 <- function(x) {
+lag5 <- function(x, year) {
   x <- tidyr::replace_na(x, 0)
-  Reduce(`+`, lapply(2:6, function(k) dplyr::lag(x, k, default = 0)))
+  Reduce(`+`, lapply(2:6, function(k) lag_yr(x, k, year, 0)))
 }
 
 # -- dyadic (between-unit) benchmarks, on the dyad panel --
@@ -235,9 +248,9 @@ d <- d |>
   group_by(dyad_id) |>
   mutate(
     .cap_asym      = abs(cinc1 - cinc2) / (cinc1 + cinc2),
-    cap_between    = lag5(abs(.cap_asym - dplyr::lag(.cap_asym, 1))),
+    cap_between    = lag5(abs(.cap_asym - lag_yr(.cap_asym, 1, year)), year),
     .polity_gap    = abs(polity21 - polity22),
-    regime_between = lag5(abs(.polity_gap - dplyr::lag(.polity_gap, 1)))
+    regime_between = lag5(abs(.polity_gap - lag_yr(.polity_gap, 1, year)), year)
   ) |>
   ungroup() |>
   select(-.cap_asym, -.polity_gap)
@@ -251,8 +264,8 @@ state_cov <- dplyr::bind_rows(
   summarise(cinc = first(cinc), polity = first(polity), .groups = "drop") |>
   arrange(ccode, year) |>
   group_by(ccode) |>
-  mutate(cinc_shift   = lag5(abs(cinc   - dplyr::lag(cinc, 1))),
-         polity_shift = lag5(abs(polity - dplyr::lag(polity, 1)))) |>
+  mutate(cinc_shift   = lag5(abs(cinc   - lag_yr(cinc, 1, year)), year),
+         polity_shift = lag5(abs(polity - lag_yr(polity, 1, year)), year)) |>
   ungroup() |>
   select(ccode, year, cinc_shift, polity_shift)
 
