@@ -635,7 +635,7 @@ p_tie <- ggplot(fs_plot, aes(x = beta, y = row, color = family)) +
   scale_color_manual(values = FAMILY_COLORS, name = NULL) +
   scale_x_continuous(n.breaks = 4, expand = expansion(mult = 0.12)) +
   scale_y_discrete(expand = expansion(add = 0.5)) +
-  labs(subtitle = "Step 1: Prior conflict reshapes the tie — benchmarks do not",
+  labs(subtitle = "Step 1: Prior conflict and the tie, with non-conflict benchmarks",   # [2026-11-10] less causal wording
        x = "Coefficient on tie strength (per SD)", y = NULL) +
   theme_bw(base_size = 18) +   # [2026-10-27] larger text throughout (figure is set at 0.9 linewidth)
   theme(panel.grid.minor = element_blank(),
@@ -687,7 +687,7 @@ p_att <- ggplot(plot_df, aes(x = beta, y = model, color = family)) +
                                                    drop0trailing = TRUE),
                      n.breaks = 4, expand = expansion(mult = 0.3)) +   # room for the % labels
   scale_y_discrete(expand = expansion(add = 0.5)) +
-  labs(subtitle = "Step 2: So the tie-conflict estimate moves",
+  labs(subtitle = "Step 2: The tie-conflict estimate as each control is added",   # [2026-11-10]
        x = "Coefficient on network tie (per SD)", y = NULL) +
   theme_bw(base_size = 18) +   # [2026-10-27] larger text throughout (figure is set at 0.9 linewidth)
   theme(panel.grid.minor = element_blank(),
@@ -703,7 +703,7 @@ p_att <- ggplot(plot_df, aes(x = beta, y = model, color = family)) +
 # --- Assemble and export --------------------------------------------------
 p_full <- (p_tie / p_att) +
   plot_annotation(
-    title = "Conflict history confounds the network-conflict relationship",
+    title = "Conflict history and the network-conflict association",   # [2026-11-10] was "...confounds..."
     subtitle = paste0(
       "Dyad + year fixed effects. Conflict history measured t-2 to t-6, ",
       "strictly prior to the tie at t-1.\n",

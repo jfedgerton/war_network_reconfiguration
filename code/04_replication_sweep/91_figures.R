@@ -64,17 +64,14 @@ if (FAM == "TIE") stopifnot(nrow(lab) == 4, all(lab$named_illustration == "Y"), 
 # Figure note (Codex fix 2026-10-11; analysis unchanged): the shaded band marks |z| < 1.96, a fixed .05 visual reference only.
 # Status colours are classified with each paper's own threshold (registry alpha_pub, .05 or .10), so a point can sit inside the
 # band and still be coloured significant (alpha_pub = .10), or outside it without changing status.
-FIG_NOTE <- "Shaded band: |z| < 1.96 (.05 reference). Colours use each paper's own threshold (alpha_pub)."
+FIG_NOTE <- "Shaded band: |z| < 1.96 (.05 reference). Colors use each study's own significance threshold."   # [2026-11-10] US spelling, no variable name
 pA <- ggplot(d, aes(z0, zh)) +
   annotate("rect", xmin = -Inf, xmax = Inf, ymin = -1.96, ymax = 1.96, fill = "grey92") +
   annotate("text", x = 0.15, y = -1.75, label = "|z| < 1.96", hjust = 0, size = 4.2, colour = "grey45") +
   geom_abline(slope = 1, intercept = 0, linetype = 2, colour = "grey40") +
   geom_hline(yintercept = 0, colour = "grey70") +
   geom_point(aes(size = cites, colour = status), alpha = .8) +
-  geom_segment(data = lab %>% filter(short_cite != "Maoz et al. 2007"), aes(x = lx + ifelse(hj == 0, 0, 0), y = ly - 0.2, xend = z0, yend = zh),
-               colour = "grey35", linewidth = .3) +
-  geom_label(data = lab, aes(x = lx, y = ly, label = short_cite, hjust = hj), size = 4.2, label.size = 0, fill = "white",
-             label.padding = unit(1.5, "pt")) +
+  # [2026-11-10] study name labels removed from the figure (requested); `lab` is still built and checked above
   scale_colour_manual(values = PAL, name = NULL, drop = FALSE, guide = guide_legend(order = 1, nrow = 1, override.aes = list(size = 3))) +
   scale_size_area(max_size = 7, breaks = c(50, 150, 300), name = "Citations", guide = guide_legend(order = 2, nrow = 1)) +
   scale_x_continuous(limits = c(0, ZC + 0.3), breaks = c(0, 2, 4, 6, 8), labels = c("0", "2", "4", "6", "8+")) +
@@ -150,7 +147,7 @@ pc <- DA %>% filter(family == "TIE", pool_status == "main")
 CAP <- paste0("All attempts whose author claims an effect, significant at baseline, that lose significance or flip sign: ",
               paste(sprintf("%s %d of %d", cc$fam, cc$ch, cc$s), collapse = "; "),
               sprintf(" (pooled ties: %d of %d).", sum(pc$sig0 & (!pc$sigh | sign(pc$b_hist) != sign(pc$b0))), sum(pc$sig0)),
-              "\nShaded band: |z| < 1.96 (.05 reference). Colours and shapes use each paper's own threshold (alpha_pub).")
+              "\nShaded band: |z| < 1.96 (.05 reference). Colors and shapes use each study's own significance threshold.")   # [2026-11-10]
 pAll <- ggplot(DA, aes(z0, zh)) +
   annotate("rect", xmin = -Inf, xmax = Inf, ymin = -1.96, ymax = 1.96, fill = "grey92") +
   annotate("rect", xmin = 0, xmax = 1.96, ymin = -Inf, ymax = Inf, fill = "grey92", alpha = .6) +

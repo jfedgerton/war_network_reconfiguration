@@ -407,7 +407,7 @@ p <- ggplot() +
   geom_text_repel(
     data = hubs,
     aes(x = lon, y = lat, label = hub),
-    size = 4.5,
+    size = 6,   # [2026-11-10] larger so labels are legible at print width (was 4.5)
     min.segment.length = 0,
     segment.linewidth = 0.2,
     box.padding = 1.5,
@@ -444,7 +444,7 @@ p <- ggplot() +
   geom_text_repel(
     data = battles,
     aes(x = lon, y = lat, label = battle),
-    size = 4.25, color = "grey15", fontface = "italic",
+    size = 5.5,   # [2026-11-10] was 4.25 color = "grey15", fontface = "italic",
     min.segment.length = 0,
     segment.linewidth = 0.2,
     box.padding = 1.3,
@@ -507,14 +507,18 @@ p <- ggplot() +
 
 print(p)
 
+# [2026-11-10] The base pdf() device cannot draw Turkish characters (Köse Dağ, Söğüt) and turns hyphens into minus
+# signs, so the manuscript now uses the PNG. The PDF uses cairo when it loads (needs XQuartz on macOS).
 ggsave(
   filename = "results/main/ottoman_byzantine_four_panel_map.png",
   plot = p,
-  width = 14, height = 11, dpi = 800
+  width = 14, height = 11, dpi = 400   # was 800; 400 dpi is ample at print width and keeps the file small
 )
+PDF_DEV <- tryCatch({ tf <- tempfile(fileext = ".pdf"); grDevices::cairo_pdf(tf); grDevices::dev.off(); unlink(tf); grDevices::cairo_pdf },
+                    warning = function(w) grDevices::pdf, error = function(e) grDevices::pdf)
 ggsave(
   filename = "results/main/ottoman_byzantine_four_panel_map.pdf",
   plot = p,
-  width = 14, height = 12
+  width = 14, height = 12, device = PDF_DEV
 )
 

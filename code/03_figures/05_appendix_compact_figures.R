@@ -111,7 +111,7 @@ TH <- theme_minimal(base_size = 12) +
   theme(panel.grid.minor = element_blank(), plot.title = element_text(face = "bold", size = 13),
         legend.position = "bottom", plot.caption = element_text(hjust = 0, size = 10),
         plot.caption.position = "plot")
-FIG_NOTE <- "Shaded band: |z| < 1.96 (.05 reference). Colours use each paper's own threshold (alpha_pub)."
+FIG_NOTE <- "Shaded band: |z| < 1.96 (.05 reference). Colors use each study's own significance threshold."   # [2026-11-10]
 STEPS <- c("Conflict\nhistory", "Benchmark\n(lagged CINC ratio)", "Benchmark\n(joint democracy)")
 
 # expected counts from the appendix text (Section 3.1): studies, and lose + flip

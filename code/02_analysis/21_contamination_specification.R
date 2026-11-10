@@ -131,10 +131,14 @@ L <- dyad_data |>
   )
 
 ties <- L |>
-  transmute(ccode1 = pmin(ccode1, ccode2), ccode2 = pmax(ccode1, ccode2), year,
+  # [2026-11-10] FIX: transmute evaluates sequentially, so the old line set ccode2 = pmax(new ccode1, ccode2) = ccode2
+  # and turned every row with ccode1 > ccode2 into a self-dyad. Asymmetric (offensive) alliance ties were lost.
+  # Now canonicalized exactly as in 03_contamination_demo.R (temporary names a, b).
+  transmute(a = pmin(ccode1, ccode2), b = pmax(ccode1, ccode2), year,
             tie_alliance, tie_igo, tie_multiplex) |>
-  group_by(ccode1, ccode2, year) |>
-  summarise(across(starts_with("tie_"), ~ max(.x, na.rm = TRUE)), .groups = "drop")
+  group_by(a, b, year) |>
+  summarise(across(starts_with("tie_"), ~ max(.x, na.rm = TRUE)), .groups = "drop") |>
+  rename(ccode1 = a, ccode2 = b)
 
 d <- d |>
   left_join(ties, by = c("ccode1", "ccode2", "year")) |>
