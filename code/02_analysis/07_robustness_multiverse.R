@@ -156,10 +156,13 @@ CHECKPOINT_DIR <- here::here("data", "processed", ".robustness_checkpoints")
 # --------------------------------------------------------------------------- #
 PERM_DRAW <- suppressWarnings(as.integer(Sys.getenv("MV_PERM_DRAW", "")))
 PERM_MODE <- !is.na(PERM_DRAW)
+# [2026-11-10] MV_PERM_BELLIG=1: state draws keep all nine belligerent-dyad rules (system draws stay on "none");
+#   output goes to data/processed/mv_perm_bellig/ so the all-dyads draws in mv_perm/ are untouched.
+PERM_BELLIG <- PERM_MODE && Sys.getenv("MV_PERM_BELLIG", "0") == "1"
 if (PERM_MODE) {
   stopifnot(PERM_DRAW >= 0)
   PERM_N_COMBOS <- as.integer(Sys.getenv("MV_PERM_N_COMBOS", "3"))
-  PERM_OUT_DIR  <- here::here("data", "processed", "mv_perm")
+  PERM_OUT_DIR  <- here::here("data", "processed", if (PERM_BELLIG) "mv_perm_bellig" else "mv_perm")
   dir.create(PERM_OUT_DIR, recursive = TRUE, showWarnings = FALSE)
   CHECKPOINT_DIR <- file.path(tempdir(), sprintf("mv_perm_ckpt_%04d", PERM_DRAW))
   unlink(CHECKPOINT_DIR, recursive = TRUE)
@@ -806,6 +809,7 @@ BELLIG_RULES <- c("none",
                   "ongoing_any_t1t", "ongoing_any_t1", "ongoing_fatal_t1t", "ongoing_fatal_t1")
 stopifnot(BELLIG_RULES[1] == "none", !anyDuplicated(BELLIG_RULES),
           all(grepl("^none$|^(onset|ongoing)_(any|fatal)_(t1t|t1)$", BELLIG_RULES)))
+BELLIG_RULES_STATE <- BELLIG_RULES   # [2026-11-10] rules for the state loop; differs from BELLIG_RULES only in permutation mode
 
 # Drop set for one rule: tibble(a, b, year, drop_ = TRUE), a < b, `year` = the t of the t-1 -> t transition.
 build_bellig_drop <- function(dd, rule) {
@@ -1217,7 +1221,8 @@ if ("ongoing_fatal_t1" %in% BELLIG_RULES && "churn_peace_ft1" %in% names(state_d
 
 # ---- [2026-11-05] permutation mode: restrict the grid and permute the conflict IVs ----------------------------
 if (PERM_MODE) {
-  BELLIG_RULES      <- "none"           # heatmap / support shares use the all-dyads rule only
+  BELLIG_RULES_STATE <- if (PERM_BELLIG) BELLIG_RULES else "none"   # [2026-11-10] state draws: all nine rules under MV_PERM_BELLIG=1
+  BELLIG_RULES      <- "none"           # system draws (and the default state draws) use the all-dyads rule only
   STATE_TFE_ENABLED <- FALSE            # timing_fe grid is split out of the support shares
   WILD_BOOT_ENABLED <- FALSE            # [2026-11-08] bootstrap rows are not part of the permutation subset
   granger_dvs       <- character(0)     # VAR / Granger / FEVD rows carry no signed coefficient
@@ -1868,7 +1873,7 @@ for (tfm in STATE_TRANSFORMS) {   # [2026-10-13] raw only
       # [2026-10-12] belligerent-dyad rule dimension: churn_alt AND the canonical churn are recomputed under
       # each rule, and every state spec below (including the timing_fe grid) runs once per rule.
       churn_prep <- prep_state_churn(dyad_work_state, manhattan_vec)
-      rule_results <- lapply(BELLIG_RULES, function(bellig_rule) {
+      rule_results <- lapply(BELLIG_RULES_STATE, function(bellig_rule) {   # [2026-11-10] = BELLIG_RULES outside permutation mode
       out_list <- list()
       state_dvs_df <- churn_from_prep(churn_prep, drop = bellig_drop[[bellig_rule]])
 
@@ -2478,7 +2483,7 @@ if (PERM_MODE) {
   if (!"fit_status" %in% names(specs_df)) specs_df$fit_status <- NA_character_
   if (!"extra_control" %in% names(specs_df)) specs_df$extra_control <- "none"
   pd <- specs_df |>
-    dplyr::filter(is.na(fit_status) | fit_status == "ok", bellig_rule == "none",
+    dplyr::filter(is.na(fit_status) | fit_status == "ok", PERM_BELLIG | bellig_rule == "none",   # [2026-11-10]
                   !startsWith(model, "VAR_"), !is.na(coef), !is.na(pval)) |>
     dplyr::mutate(extra_control = tidyr::replace_na(extra_control, "none"),
                   hypothesis = dplyr::if_else(level == "system", "H1", "H2"),
@@ -2490,10 +2495,23 @@ if (PERM_MODE) {
     dplyr::summarise(n = dplyr::n(), share_sig_pos = mean(sig_pos), share_pos = mean(coef > 0),
                      median_z = stats::median(z, na.rm = TRUE), mean_z = mean(z, na.rm = TRUE), .groups = "drop") |>
     dplyr::mutate(draw = PERM_DRAW)
+  if (PERM_BELLIG) {
+    # [2026-11-10] H1 keeps only "none"; H2 carries all nine rules. Rows: one per (hypothesis, rule) plus a pooled
+    # row per hypothesis (bellig_rule = "pooled"; for H1 identical to "none").
+    stopifnot(all(pd$bellig_rule[pd$hypothesis == "H1"] == "none"),
+              setequal(unique(pd$bellig_rule[pd$hypothesis == "H2"]), BELLIG_RULES_STATE),
+              length(BELLIG_RULES_STATE) == 9)
+    summ_rule <- pd |>
+      dplyr::group_by(hypothesis, bellig_rule) |>
+      dplyr::summarise(n = dplyr::n(), share_sig_pos = mean(sig_pos), share_pos = mean(coef > 0),
+                       median_z = stats::median(z, na.rm = TRUE), mean_z = mean(z, na.rm = TRUE), .groups = "drop") |>
+      dplyr::mutate(draw = PERM_DRAW)
+    summ <- dplyr::bind_rows(summ |> dplyr::mutate(bellig_rule = "pooled"), summ_rule)
+  }
   readr::write_csv(summ, file.path(PERM_OUT_DIR, sprintf("draw_%04d.csv", PERM_DRAW)))
   if (PERM_DRAW == 0)   # observed draw: keep every row so the driver can check it against the main run
     readr::write_csv(pd |> dplyr::select(level, dv, war_variable, weighting, transform, layers, model,
-                                         extra_control, coef, se, pval),
+                                         extra_control, dplyr::any_of(if (PERM_BELLIG) "bellig_rule" else character(0)), coef, se, pval),
                      file.path(PERM_OUT_DIR, "draw_0000_specs.csv"))
   unlink(CHECKPOINT_DIR, recursive = TRUE)
   cat(sprintf("PERMUTATION MODE: draw %d written (%d specs)\n", PERM_DRAW, nrow(pd)))
