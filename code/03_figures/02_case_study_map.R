@@ -331,6 +331,13 @@ battles$period <- factor(
   levels = c(period_1243, period_1300, period_1352, period_1400)
 )
 
+# [2026-11-10] labels for cities and battles in one data frame (one repel layer)
+map_labels <- dplyr::bind_rows(
+  hubs    |> dplyr::transmute(period, lon, lat, label = hub,    ff = "plain",  col = "black",  sz = 5.2),
+  battles |> dplyr::transmute(period, lon, lat, label = battle, ff = "italic", col = "grey15", sz = 4.8)
+)
+stopifnot(nrow(map_labels) == nrow(hubs) + nrow(battles), is.factor(map_labels$period))
+
 # ------------------------------------------------------------
 # Earthquake marker (1352 panel only)
 # ------------------------------------------------------------
@@ -404,18 +411,19 @@ p <- ggplot() +
     size = 1.3,
     inherit.aes = FALSE
   ) +
+  # [2026-11-10] city and battle labels share ONE repel layer so they avoid each other (separate layers overlapped,
+  # e.g. Nikaia over Bapheus). Battles keep the grey italic style; sizes sit between the old and the enlarged ones.
   geom_text_repel(
-    data = hubs,
-    aes(x = lon, y = lat, label = hub),
-    size = 6,   # [2026-11-10] larger so labels are legible at print width (was 4.5)
+    data = map_labels,
+    aes(x = lon, y = lat, label = label, fontface = ff, colour = I(col), size = I(sz)),
     min.segment.length = 0,
     segment.linewidth = 0.2,
-    box.padding = 1.5,
-    point.padding = 0.5,
-    force = 9,
+    box.padding = 1.2,
+    point.padding = 0.6,
+    force = 12,
     force_pull = 0.3,
-    max.overlaps = 40,
-    max.iter = 8000,
+    max.overlaps = Inf,
+    max.iter = 20000,
     seed = 123,
     inherit.aes = FALSE
   ) +
@@ -439,21 +447,6 @@ p <- ggplot() +
     data = battles,
     aes(x = lon, y = lat),
     shape = 4, size = 4, color = "grey15", stroke = 0.9,
-    inherit.aes = FALSE
-  ) +
-  geom_text_repel(
-    data = battles,
-    aes(x = lon, y = lat, label = battle),
-    size = 5.5,   # [2026-11-10] was 4.25 color = "grey15", fontface = "italic",
-    min.segment.length = 0,
-    segment.linewidth = 0.2,
-    box.padding = 1.3,
-    point.padding = 0.5,
-    force = 8,
-    force_pull = 0.3,
-    max.overlaps = 40,
-    max.iter = 8000,
-    seed = 1235,
     inherit.aes = FALSE
   ) +
   facet_wrap(~ period, ncol = 2) +
