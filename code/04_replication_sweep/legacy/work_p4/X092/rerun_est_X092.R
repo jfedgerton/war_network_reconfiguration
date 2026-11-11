@@ -49,8 +49,9 @@ M <- run_six(rhs0, s, function(r, dd) FG(r, dd, "year"))   # [2026-11-08] was "s
 if (Sys.getenv("SWEEP_SENS") == "1") {
   source(file.path(CODE, "hist/sens_helper.R"))
   # dat = prep(s, rhs0): the rows FG() actually estimates on (FG calls prep(), which drops single-observation dyads from s)
-  sens_run(id = "X092", dat = prep(s, rhs0), y = "dispute1", tie = "smigoabi", ctrl = setdiff(rhs0, "smigoabi"), fe = NULL,
-           fit = function(dat, add) { r <- FG(c(rhs0, add), dat, "year")$smigoabi; c(b = unname(r[["b"]]), se = unname(r[["se"]]), p = unname(r[["p"]])) })
+  # [2026-11-10 audit2] hook moved to the new headline term (smldmat)
+  sens_run(id = "X092", dat = prep(s, rhs0), y = "dispute1", tie = "smldmat", ctrl = setdiff(rhs0, "smldmat"), fe = NULL,
+           fit = function(dat, add) { r <- FG(c(rhs0, add), dat, "year")$smldmat; c(b = unname(r[["b"]]), se = unname(r[["se"]]), p = unname(r[["p"]])) })
 }
 conv <- function(t) lapply(M, function(m) list(b = unname(m[[t]]["b"]), se = unname(m[[t]]["se"]), p = unname(m[[t]]["p"]), n = attr(m, "n")))
 f_old <- file.path(OUT, "results_verify", "X092__smldep.csv")  # port: prior result (unused below); absent in pipeline

@@ -40,10 +40,10 @@ M <- run_six(f0, ds, K, FF, WO)
 # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
 if (Sys.getenv("SWEEP_SENS") == "1") {
   source(file.path(CODE, "hist/sens_helper.R"))
-  sens_run(id = "X074", dat = ds, y = "mzmid1_orig", tie = "lowdem",
-           ctrl = c("highdem", "lowdep", "anyally", "lcaprat", "contig150", "ldist", "majpow", "py", "spline1", "spline2", "spline3", "numstate"), fe = NULL,
+  sens_run(id = "X074", dat = ds, y = "mzmid1_orig", tie = "lowdep",   # [2026-11-10 audit2] hook moved to the headline row (lowdep)
+           ctrl = c("highdem", "lowdem", "anyally", "lcaprat", "contig150", "ldist", "majpow", "py", "spline1", "spline2", "spline3", "numstate"), fe = NULL,
            fit = function(dat, add) { ct <- FF(if (length(add)) update(f0, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else f0, dat)
-             c(b = unname(ct["lowdem", 1]), se = unname(ct["lowdem", 2]), p = unname(ct["lowdem", 3])) })
+             c(b = unname(ct["lowdep", 1]), se = unname(ct["lowdep", 2]), p = unname(ct["lowdep", 3])) })
 }
 
 meta <- list(xid = "X074", short_cite = "Oneal & Russett 2005", journal = "CMPS", year = 2005, doi = "10.1080/07388940500339209")

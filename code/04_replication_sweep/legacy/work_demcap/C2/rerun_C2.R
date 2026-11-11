@@ -31,10 +31,10 @@ M <- run_six(f, ds, K, "dyadid", W)
 # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
 if (Sys.getenv("SWEEP_SENS") == "1") {
   source(file.path(CODE, "hist/sens_helper.R"))
-  sens_run(id = "C2", dat = ds, y = "maoznewl", tie = "sun2cati",
-           ctrl = c("demlo", "poldist", "deplo", "capopenl", "rgdppclo", "gdpcontg", "contig", "logdstab", "majpdyds", "alliesr", "lncaprt", "maozyrs", "spline1", "spline2", "spline3"), fe = NULL,
+  sens_run(id = "C2", dat = ds, y = "maoznewl", tie = "demlo",   # [2026-11-10 audit2] hook moved to the new headline term (demlo)
+           ctrl = c("sun2cati", "poldist", "deplo", "capopenl", "rgdppclo", "gdpcontg", "contig", "logdstab", "majpdyds", "alliesr", "lncaprt", "maozyrs", "spline1", "spline2", "spline3"), fe = NULL,
            fit = function(dat, add) { ff <- if (length(add)) update(f, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else f
-             fit_keys(ff, dat, "sun2cati", "dyadid")$k[["sun2cati"]] })
+             fit_keys(ff, dat, "demlo", "dyadid")$k[["demlo"]] })
 }
 
 est <- "logit, dyad-clustered SE (Maoz MID onset t+1), politically relevant dyads"; sc <- "Choi 2011 ISQ"

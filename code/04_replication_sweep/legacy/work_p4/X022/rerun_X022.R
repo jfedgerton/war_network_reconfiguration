@@ -25,12 +25,12 @@ for (k in names(spec)) {
   ds <- common_sample(d, f0, "dyad_id", "ccode1", "ccode2", "year")
   M <- run_six(f0, ds, k, "~dyad_id", "logit", Wk); rm(ds); gc()
   # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
-  if (Sys.getenv("SWEEP_SENS") == "1" && k == "polity_low") {   # headline term only (the loop also runs polyprod and polity_both)
+  if (Sys.getenv("SWEEP_SENS") == "1" && k == "polyprod") {   # [2026-11-10 audit2] hook moved to the new headline term (polyprod)   # headline term only (the loop also runs polyprod and polity_both)
     source(file.path(CODE, "hist/sens_helper.R"))
     # ds is removed on the run_six() line above: rebuild the same common sample with the script's own call (same d, same f0)
-    sens_run(id = "X022", dat = common_sample(d, f0, "dyad_id", "ccode1", "ccode2", "year"), y = "mct", tie = "polity_low",
+    sens_run(id = "X022", dat = common_sample(d, f0, "dyad_id", "ccode1", "ccode2", "year"), y = "mct", tie = "polyprod",
              ctrl = c("lowdpnd", "cincratio", "alliance1", "absidealdiff", "conttype2", "time", "time_sq", "time_cu"), fe = NULL,
-             fit = function(dat, add) { r <- fit_keys(if (length(add)) update(f0, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else f0, dat, "polity_low", "~dyad_id", "logit")$k$polity_low
+             fit = function(dat, add) { r <- fit_keys(if (length(add)) update(f0, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else f0, dat, "polyprod", "~dyad_id", "logit")$k$polyprod
                c(b = unname(r[["b"]]), se = unname(r[["se"]]), p = unname(r[["p"]])) })
   }
   write_p4(m, "DEMOCRACY", "KEY", k, "abstract: 'pairs of democracies are significantly less likely to engage in coercive diplomacy'",

@@ -324,3 +324,15 @@ row_id,id,key_term,out_file,row_filter,col_b0,col_p0,col_b_hist,col_p_hist,col_b
 335,P9_092,gendense_lag,_slow/P9_092.csv,"key_term == ""gendense_lag""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 336,P9_093,tie3,results_p9/P9_093__tie3.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 337,P9_094,arms,results_p9/P9_094__arms.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+338,ADD_T01,PTACent1_lag,results/ADD_T01.csv,"key_term == ""PTACent1_lag""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+339,ADD_T01,PTACentDemoc_1_lag,results/ADD_T01.csv,"key_term == ""PTACentDemoc_1_lag""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+340,ADD_T03,notnonagg,results/ADD_T03.csv,"key_term == ""notnonagg""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+341,ADD_T03,nonaggonly,results/ADD_T03.csv,"key_term == ""nonaggonly""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+342,ADD_T05,ccgap,results/ADD_T05.csv,"key_term == ""ccgap""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+343,ADD_D01,sel_jointd6,results_add/ADD_D01__sel_jointd6.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+344,ADD_D01,sel_monarchy,results_add/ADD_D01__sel_monarchy.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+345,ADD_D01,sel_personal,results_add/ADD_D01__sel_personal.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+346,ADD_D01,sel_socialist,results_add/ADD_D01__sel_socialist.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+347,ADD_D01,sel_military,results_add/ADD_D01__sel_military.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+348,ADD_D10,pop_x_poly,results_add/ADD_D10__pop_x_poly.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+349,ADD_D11,rightparti2,results_add/ADD_D11__rightparti2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used

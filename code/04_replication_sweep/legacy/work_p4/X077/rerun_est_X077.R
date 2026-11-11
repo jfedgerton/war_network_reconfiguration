@@ -25,4 +25,12 @@ for (k in K) {
       lapply(R, function(r) r[c("b", "se", "p"), k]), nrow(d), paste0(if (k == "democracy") "CONTROL row. " else "", sprintf("Previous fixest-SE p0 %.3g, p_dm %.3g.", tab["m0", "p_fixest"], tab["mDM", "p_fixest"])))
   else cat(k, ": SEs agree within 2% -> MATCH row kept\n")
 }
+# ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
+# [2026-11-10 audit2] headline Ipow is a product term -> split only (sens_split)
+if (Sys.getenv("SWEEP_SENS") == "1") {
+  source(file.path(CODE, "hist/sens_helper.R"))
+  sens_split(id = "X077", dat = d, fit = function(dat, add) {
+    f <- if (length(add)) update(f0, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else f0
+    r <- probit_stata(f, dat, K, "robust"); c(b = unname(r["b", "Ipow"]), se = unname(r["se", "Ipow"]), p = unname(r["p", "Ipow"])) })
+}
 sink()

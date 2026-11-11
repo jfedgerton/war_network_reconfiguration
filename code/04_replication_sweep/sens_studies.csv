@@ -62,7 +62,7 @@ X066,N,full
 X069,N,full
 X074,Y,full
 X076,Y,full
-X077,N,full
+X077,N,split
 X078,N,full
 X079,N,full
 X080,N,full
@@ -119,3 +119,6 @@ P9_085,N,split
 P9_082,N,full
 P9_087,N,split
 P9_093,N,full
+ADD_T01,N,split
+ADD_T05,N,full
+ADD_D10,N,split

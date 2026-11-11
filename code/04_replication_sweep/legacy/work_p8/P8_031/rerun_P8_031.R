@@ -42,8 +42,9 @@ M <- run_six(rhs, ds, fitter)
 # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
 if (Sys.getenv("SWEEP_SENS") == "1") {
   source(file.path(CODE, "hist/sens_helper.R"))
-  sens_run(id = "P8_031", dat = ds, y = "deadlyl", tie = "diff1", ctrl = setdiff(rhs, "diff1"), fe = NULL,
-           fit = function(dat, add) { r <- fitter(c(rhs, add), dat)$diff1; c(b = unname(r[["b"]]), se = unname(r[["se"]]), p = unname(r[["p"]])) })
+  # [2026-11-10 audit2] hook moved to the new headline term (pcenerg)
+  sens_run(id = "P8_031", dat = ds, y = "deadlyl", tie = "pcenerg", ctrl = setdiff(rhs, "pcenerg"), fe = NULL,
+           fit = function(dat, add) { r <- fitter(c(rhs, add), dat)$pcenerg; c(b = unname(r[["b"]]), se = unname(r[["se"]]), p = unname(r[["p"]])) })
 }
 meta <- list(pid = "P8_031", short_cite = "Gartzke & Weisiger 2014", journal = "ISQ", year = 2014, doi = "10.1111/isqu.12113",
   family = "DEMOCRACY", headline_table_model = "Table 3, Model 14 (dyadic, fatal MID onset, 1816-2001)",

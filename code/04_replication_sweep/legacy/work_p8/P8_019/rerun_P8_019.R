@@ -30,8 +30,9 @@ M <- run_six(rhs, ds, fitter)
 # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
 if (Sys.getenv("SWEEP_SENS") == "1") {
   source(file.path(CODE, "hist/sens_helper.R"))
-  sens_run(id = "P8_019", dat = ds, y = "dispute", tie = "democ", ctrl = setdiff(rhs, "democ"), fe = NULL,
-           fit = function(dat, add) fitter(c(rhs, add), dat)[["democ"]])
+  # [2026-11-10 audit2] hook moved to the new headline term (single)
+  sens_run(id = "P8_019", dat = ds, y = "dispute", tie = "single", ctrl = setdiff(rhs, "single"), fe = NULL,
+           fit = function(dat, add) fitter(c(rhs, add), dat)[["single"]])
 }
 
 saveRDS(list(M = M, full = full), file.path(W, "M_P8_019.rds"))

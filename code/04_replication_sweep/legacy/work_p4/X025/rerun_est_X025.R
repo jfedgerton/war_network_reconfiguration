@@ -66,8 +66,9 @@ stopifnot(length(unique(sapply(MB, `[[`, "n"))) == 1)
 # (headline row = lndefexp in model B, the Leadership Tenure Model)
 if (Sys.getenv("SWEEP_SENS") == "1") {
   source(file.path(CODE, "hist/sens_helper.R"))
-  sens_run(id = "X025", dat = sB, y = "conflict", tie = "lndefexp", ctrl = c("defpol4", "lnchaexp", CTL), fe = NULL,
-           fit = function(dat, add) { r <- relogit_fit(if (length(add)) update(fB, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else fB, dat, "lndefexp")$k[["lndefexp"]]
+  # [2026-11-10 audit2] hook moved to the new headline term (defpol4 in model A, row defpol4_notenure)
+  sens_run(id = "X025", dat = sA, y = "conflict", tie = "defpol4", ctrl = CTL, fe = NULL,
+           fit = function(dat, add) { r <- relogit_fit(if (length(add)) update(fA, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else fA, dat, "defpol4")$k[["defpol4"]]
              c(b = unname(r["b"]), se = unname(r["se"]), p = unname(r["p"])) })
 }
 est_write("X025", "Gelpi & Grieco 2001 JCR", "defpol4", AE, SRC, SE_, "N", MIS, "Y", conv(MB, "defpol4"),

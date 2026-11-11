@@ -34,11 +34,11 @@ for (k in list(list(f = fL, t = "lowdem", ev = "\"democracy continues to be a co
   M <- run_six(k$f, ds, k$t, ff_logit_iid, Wk)
   # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
   # (headline row = bothdem model fB; controls = every term of the script's R string, i.e. all terms of fB except bothdem)
-  if (Sys.getenv("SWEEP_SENS") == "1" && k$t == "bothdem") {
+  if (Sys.getenv("SWEEP_SENS") == "1" && k$t == "lowdem") {   # [2026-11-10 audit2] hook moved to the new headline term (lowdem, model fL)
     source(file.path(CODE, "hist/sens_helper.R"))
-    sens_run(id = "X020", dat = ds, y = "cwmid", tie = "bothdem", ctrl = setdiff(attr(terms(fB), "term.labels"), "bothdem"), fe = NULL,
-             fit = function(dat, add) { ct <- ff_logit_iid(if (length(add)) update(fB, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else fB, dat)
-               c(b = unname(ct["bothdem", 1]), se = unname(ct["bothdem", 2]), p = unname(ct["bothdem", 3])) })
+    sens_run(id = "X020", dat = ds, y = "cwmid", tie = "lowdem", ctrl = setdiff(attr(terms(fL), "term.labels"), "lowdem"), fe = NULL,
+             fit = function(dat, add) { ct <- ff_logit_iid(if (length(add)) update(fL, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else fL, dat)
+               c(b = unname(ct["lowdem", 1]), se = unname(ct["lowdem", 2]), p = unname(ct["lowdem", 3])) })
   }
   write_p4(meta, k$t, "DEMOCRACY", "KEY", k$ev, "UNVERIFIED", NA, r0[k$t, 1], est, n_orig, M, "Y (prev.mid.count: count of previous MIDs)",
     paste(nt, if (k$t == "lowdem") "Headline Table 1 Model 4." else "Parallel bothdem table, Model 4 spec."))

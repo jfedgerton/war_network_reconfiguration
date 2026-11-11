@@ -33,10 +33,10 @@ M <- run_six(f0, ds, K, "~dyadid", "logit", WO)
 # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
 if (Sys.getenv("SWEEP_SENS") == "1") {
   source(file.path(CODE, "hist/sens_helper.R"))
-  sens_run(id = "X078", dat = ds, y = "F_cwmid", tie = "lowerpolity",
-           ctrl = c("F_signed_noforce", "F_entered_force", "lowerdep", "minchdep", "mingrowth", "F_contigdi", "F_lndist", "atopally", "caprat",
+  sens_run(id = "X078", dat = ds, y = "F_cwmid", tie = "F_signed_noforce",   # [2026-11-10 audit2] hook moved to the new headline term (F_signed_noforce)
+           ctrl = c("lowerpolity", "F_entered_force", "lowerdep", "minchdep", "mingrowth", "F_contigdi", "F_lndist", "atopally", "caprat",
                     "F_py_mid", "F_py2", "F_py3", "coldwar"), fe = NULL,
-           fit = function(dat, add) { r <- fit_keys(if (length(add)) update(f0, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else f0, dat, "lowerpolity", "~dyadid", "logit")$k$lowerpolity
+           fit = function(dat, add) { r <- fit_keys(if (length(add)) update(f0, as.formula(paste(". ~ . +", paste(add, collapse = " + ")))) else f0, dat, "F_signed_noforce", "~dyadid", "logit")$k$F_signed_noforce
              c(b = unname(r[["b"]]), se = unname(r[["se"]]), p = unname(r[["p"]])) })
 }
 nt <- paste0("Model 2 of authors' do-file (table not accessible; no author log) -> UNVERIFIED. DV F.cwmid (MID onset t+1), 1957-2000 per paper. ",
