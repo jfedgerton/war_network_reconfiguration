@@ -338,6 +338,23 @@ st_rows <- bind_rows(
   fit_state(st_big,   "(3) MID participants only")
 )
 
+# [2026-11-12 fatal] State-level analogue of the system cut points in panel A: keep state-years whose
+# calendar year had >= thr fatal MIDs system-wide (same SYSTEM_FATAL_MINS and the same year-t
+# fatal_mid_count as the system restriction above). Feeds the single-row appendix figure (05, B3).
+# Reads the unfiltered system file, so years the system panel drops (no JS) can still enter; same >= thr rule.
+sys_fatal_by_year <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
+  select(year, sys_fatal_mid_count = fatal_mid_count)
+stopifnot(!anyDuplicated(sys_fatal_by_year$year))
+for (thr in SYSTEM_FATAL_MINS) {
+  keep_years <- sys_fatal_by_year$year[sys_fatal_by_year$sys_fatal_mid_count >= thr]
+  d <- state_churn |> filter(year %in% keep_years)
+  cat(sprintf("  State   fatal-MID years:  %d state-years in %d years (>= %d fatal MIDs system-wide)\n",
+              nrow(d), length(unique(d$year)), thr))
+  st_rows <- bind_rows(st_rows, fit_state(d, sprintf("(4) Fatal MIDs >= %d", thr)))
+}
+# 3 thresholds x 4 state IVs; fail loudly if a thin sample dropped a fit or the IV
+stopifnot(sum(grepl("^\\(4\\)", st_rows$sample)) == 3 * length(state_ivs), !anyNA(st_rows$estimate))
+
 results <- bind_rows(sys_rows, st_rows) |>
   mutate(ci_low  = estimate - 1.96 * se,
          ci_high = estimate + 1.96 * se)

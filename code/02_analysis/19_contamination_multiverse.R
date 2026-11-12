@@ -577,10 +577,10 @@ ACCENT <- "#2C6CB0"
 # Order the layer inputs: singles first, combined last (top of the plot).
 input_order <- c("Offensive\nalliance", "Defensive\nalliance", "IGO",
                  "Trade", "Combined\n(all layers)")
-# One row, two columns: dyadic (i-j MIDs) on the left, monadic (third-party) on
-# the right -- mirroring the two separate conflict-history rungs in the main text.
-proc_label <- c(Dyadic  = "Dyadic conflict history\n(i-j MIDs)",
-                Monadic = "Monadic conflict history\n(third-party, i-j removed)")
+# [2026-11-12] One column, two rows: dyadic (i-j MIDs) on top, monadic (third-party) below, so the
+# figure fits as the right-hand panel beside the multiverse permutation figure in the appendix.
+proc_label <- c(Dyadic  = "Dyadic conflict history (i-j MIDs)",
+                Monadic = "Monadic conflict history (third-party, i-j removed)")
 plot_df <- mv |>
   mutate(layer_type = factor(label_layer(layers), levels = rev(input_order)),
          measure    = factor(weight_label[weighting],
@@ -593,25 +593,19 @@ p <- ggplot(plot_df, aes(x = attenuation_pct, y = layer_type,
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray55") +
   geom_point(size = 3, stroke = 0.9,
              position = position_dodge(width = 0.5)) +
-  facet_wrap(~ process, nrow = 1, ncol = 2, scales = "free_x") +
+  facet_wrap(~ process, ncol = 1, nrow = 2, scales = "free_x") +
   scale_color_manual(name = NULL,
                      values = c(ACCENT, "#C2A25A", "#6BA368")) +
   scale_shape_manual(name = NULL, values = c(16, 17, 15)) +
   scale_x_continuous(breaks = scales::pretty_breaks(4)) +
-  labs(
-    title = "Contamination is not an artifact of one measurement choice",
-    subtitle = paste0(
-      "Attenuation of the tie-conflict coefficient by network input, under three\n",
-      "Manhattan tie measures, for the dyadic and monadic conflict-history ",
-      "processes separately.\nPositive = attenuation (toward zero); negative = ",
-      "amplification (away from zero)."),
-    x = "Attenuation (%)", y = NULL
-  ) +
+  guides(color = guide_legend(ncol = 1), shape = guide_legend(ncol = 1)) +
+  # [2026-11-12] title and subtitle dropped for the narrow panel; the appendix caption carries them
+  labs(x = "Attenuation (%)", y = NULL) +
   theme_bw(base_size = 12) +
   theme(panel.grid.minor = element_blank(),
         panel.grid.major.y = element_blank(),
         strip.background = element_rect(fill = "gray92", color = "gray70"),
-        strip.text = element_text(face = "bold"),
+        strip.text = element_text(face = "bold", size = 10),
         axis.text.x = element_text(angle = 0, hjust = 0.5),
         axis.text.y = element_text(lineheight = 0.9),
         legend.position = "bottom",
@@ -619,7 +613,7 @@ p <- ggplot(plot_df, aes(x = attenuation_pct, y = layer_type,
         plot.subtitle = element_text(color = "gray30", size = 9))
 
 ggsave(file.path(FIG_DIR, "fig_ms_contamination_multiverse.png"), p,
-       width = 11, height = 5.5, dpi = 400, bg = "white")
+       width = 5.5, height = 6.4, dpi = 400, bg = "white")  # [2026-11-12] was 11 x 5.5 (one row)
 cat("  -> fig_ms_contamination_multiverse.png\n")
 
 cat("\nSaved -> data/processed/contamination_multiverse.csv\n")

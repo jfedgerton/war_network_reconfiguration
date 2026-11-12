@@ -15,17 +15,20 @@
 #       = fig_ms_contamination_specification + fig_app_contamination_nocontrols
 #       inputs: data/processed/contamination_specification.csv, contamination_nocontrols_ladder.csv (21_*.R)
 #   B3  fig_app_compact_war_samples.png
-#       = fig_ms_war_samples_system + fig_ms_hostlev_war_samples_state
-#       inputs: data/processed/robustness_war_samples.csv (11_*.R), robustness_hostlev_results.csv (12_*.R)
+#       = log(1 + fatal MIDs) at t-1, system | state, full sample + years with >= 3/5/10 fatal MIDs [2026-11-12]
+#       inputs: data/processed/robustness_war_samples.csv (11_*.R)
 #   B4  fig_app_compact_year_drops.png
 #       = fig_ms_random_year_drops_state + fig_ms_sliding_window_state
 #       inputs: data/processed/robustness_year_drops_random.csv, robustness_year_drops_sliding.csv (10_*.R)
+#   B5  fig_app_compact_igo_share.png   [2026-11-12]
+#       = IGO membership-share drops, log(1 + fatal MIDs) at t-1 only; rows system/state x cols lower/upper/both
+#       inputs: data/processed/robustness_igo_share_results.csv (14_*.R)
 #
 # Output: code/03_figures/output/manuscript/  (canvases sized for \linewidth in the appendix)
 # Run from the repository root:  Rscript code/03_figures/05_appendix_compact_figures.R
 #
 # Other presentation changes: long subtitles dropped (the LaTeX captions carry the sign convention and the
-# gap-window explanation); B4 in-bar percentages dropped (shares printed to the log); B3 system facets 2 x 2.
+# gap-window explanation); B4 in-bar percentages dropped (shares printed to the log); B3 single row, fatal MIDs only.
 # Plot rules: horizontal x-axis text (long labels broken over two lines), facet strips on top
 # (facet_grid row strips stay on the right), and no text drawn over data marks.
 ###############################################################################
@@ -240,53 +243,46 @@ fig_b2 <- p_spec / p_nc + plot_layout(heights = c(1.15, 1))
 save_fig("fig_app_compact_contam_spec.png", fig_b2, width = 9, height = 9.5)
 
 ###############################################################################
-# B3. Fatal MIDs / battle-death subsets: system + state
+# B3. Fatal-MID samples: system | state, log(1 + fatal MIDs) at t-1
 ###############################################################################
 cat("\n=== B3: war samples ===\n")
-ws <- read_chk("robustness_war_samples.csv", c("level", "sample", "iv_label", "estimate", "ci_low", "ci_high"))
-hl <- read_chk("robustness_hostlev_results.csv", c("level", "iv_label", "estimate", "ci_low", "ci_high"))
-stopifnot(all(hl$level == "state"))
+# [2026-11-12 fatal] Single row, fatal MIDs only, main specification only: log(1 + fatal MIDs) at t-1.
+# A = system (JS divergence), B = state (churn); rows = full sample and years with >= 3/5/10 fatal MIDs
+# system-wide (11_robustness_war_samples.R samples (1), (3), (4)). HostLev variants dropped from this figure.
+ws <- read_chk("robustness_war_samples.csv", c("level", "sample", "iv", "iv_label", "estimate", "ci_low", "ci_high"))
+WS_SAMPLES <- c("Full sample"          = "(1) Full sample",
+                "Years with >= 3 fatal MIDs"  = "Fatal MIDs >= 3",
+                "Years with >= 5 fatal MIDs"  = "Fatal MIDs >= 5",
+                "Years with >= 10 fatal MIDs" = "Fatal MIDs >= 10")
+ws_pick <- function(lev, iv_col, thr_prefix) {
+  out <- ws |>
+    filter(level == lev, iv == iv_col) |>
+    mutate(key = ifelse(sample == "(1) Full sample", sample, sub("^\\([0-9]\\) ", "", sample)),
+           keep = sample == "(1) Full sample" | startsWith(sample, thr_prefix)) |>
+    filter(keep, key %in% WS_SAMPLES) |>
+    mutate(sample_lab = factor(names(WS_SAMPLES)[match(key, WS_SAMPLES)], levels = names(WS_SAMPLES)))
+  stopifnot(nrow(out) == 4, !anyDuplicated(out$sample_lab), !anyNA(out$estimate), !anyNA(out$ci_low), !anyNA(out$ci_high))
+  out
+}
+sys_df <- ws_pick("system", "log_fatal_mid_count_lag1", "(3) Fatal MIDs")
+st_df  <- ws_pick("state",  "log_fatal_onset_lag1",     "(4) Fatal MIDs")
 
-stopifnot("(2) Drop WWI + WWII" %in% ws$sample)
-sys_df <- ws |>
-  filter(level == "system", sample != "(2) Drop WWI + WWII") |>      # same restriction as 11_robustness_war_samples.R
-  mutate(sample   = factor(sample, levels = unique(sample)),
-         iv_label = factor(iv_label, levels = unique(iv_label)))
-stopifnot(nrow(sys_df) == 16)   # 4 samples x 4 IVs
+ws_panel <- function(dat, ttl, show_y = TRUE) {
+  ggplot(dat, aes(x = estimate, y = fct_rev(sample_lab))) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "gray55") +
+    geom_errorbarh(aes(xmin = ci_low, xmax = ci_high), height = 0.15, linewidth = 0.6, color = ACCENT) +
+    geom_point(size = 2.2, color = ACCENT) +
+    scale_x_continuous(breaks = breaks_pretty(n = 3),
+                       labels = function(x) format(x, scientific = FALSE, drop0trailing = TRUE, trim = TRUE)) +
+    labs(title = ttl, x = "Coefficient (95% CI)", y = NULL) +
+    theme_app(11) +
+    theme(axis.text.y = if (show_y) element_text(size = 9) else element_blank())
+}
+p_sys <- ws_panel(sys_df, "A. System (JS divergence)")
+p_st  <- ws_panel(st_df,  "B. State (churn)", show_y = FALSE)
 
-p_sys <- ggplot(sys_df, aes(x = estimate, y = fct_rev(sample))) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray55") +
-  geom_errorbarh(aes(xmin = ci_low, xmax = ci_high), height = 0.15, linewidth = 0.6, color = ACCENT) +
-  geom_point(size = 2.2, color = ACCENT) +
-  facet_wrap(~ iv_label, scales = "free_x", nrow = 2, labeller = label_wrap_gen(width = 32)) +
-  scale_x_continuous(breaks = breaks_pretty(n = 3), labels = function(x) format(x, scientific = FALSE, drop0trailing = TRUE, trim = TRUE)) +
-  labs(title = "A. System level (JS divergence): conflict-sample restrictions",
-       x = "Coefficient (95% CI)", y = NULL) +
-  theme_app(11) + theme(panel.spacing.x = unit(1.2, "lines"))
-
-LEV_ORDER <- c("MID onset (t-1)", "log(1 + MID onset) (t-1)",
-               "Fatal MID onset (t-1)", "log(1 + Fatal MID onset) (t-1)",
-               "Mean HostLev (onsets, t-1)", "log(1 + Mean HostLev) (onsets, t-1)")
-st_df <- bind_rows(
-  ws |> filter(level == "state", sample == "(1) Full sample") |>
-    transmute(iv_label, estimate, ci_low, ci_high, group = "MID sample (full)"),
-  hl |> transmute(iv_label, estimate, ci_low, ci_high, group = "Hostility level"))
-stopifnot(nrow(st_df) == 6, setequal(st_df$iv_label, LEV_ORDER))   # 4 war-sample IVs + 2 HostLev IVs
-st_df <- st_df |> mutate(iv_label = factor(iv_label, levels = LEV_ORDER),
-                         group = factor(group, levels = c("MID sample (full)", "Hostility level")))
-
-p_st <- ggplot(st_df, aes(x = estimate, y = fct_rev(iv_label), color = group)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray55") +
-  geom_errorbarh(aes(xmin = ci_low, xmax = ci_high), height = 0.18, linewidth = 0.7) +
-  geom_point(size = 2.6) +
-  scale_color_manual(values = c("MID sample (full)" = ACCENT, "Hostility level" = ACCENT2), name = NULL) +
-  scale_y_discrete(labels = label_wrap(22)) +
-  labs(title = "B. State level (churn): MID-sample and hostility-level variants",
-       x = "Coefficient (95% CI)", y = NULL) +
-  theme_app(11)
-
-fig_b3 <- p_sys / p_st + plot_layout(heights = c(1.3, 1))
-save_fig("fig_app_compact_war_samples.png", fig_b3, width = 9, height = 9)
+fig_b3 <- p_sys | p_st
+save_fig("fig_app_compact_war_samples.png", fig_b3, width = 9, height = 3.2)
 
 ###############################################################################
 # B4. Temporal robustness (state level): random drops + sliding window
@@ -344,5 +340,56 @@ p_sld <- ggplot(sld_st, aes(x = mid_year, y = estimate, color = window_label, fi
 fig_b4 <- (p_box | p_bar) / p_sld + plot_layout(heights = c(1, 1))
 save_fig("fig_app_compact_year_drops.png", fig_b4, width = 9, height = 8.5)
 
+###############################################################################
+# B5. IGO membership-share drops: log(1 + fatal MIDs) at t-1 only   [2026-11-12]
+#     rows = system (JS) / state (churn); columns = lower / upper / both tails dropped.
+#     Replaces fig_ms_igo_share_both_system.png + fig_ms_igo_share_both_state.png in the appendix.
+#     input: data/processed/robustness_igo_share_results.csv (14_igo_membership_sliding.R; plot only, no refit)
+###############################################################################
+cat("\n=== B5: IGO share drops ===\n")
+igo <- read_chk("robustness_igo_share_results.csv",
+                c("level", "iv", "L", "U", "grid", "estimate", "ci_low", "ci_high"))
+igo_f <- igo |>
+  filter((level == "system" & iv == "log_fatal_mid_count_lag1") |
+         (level == "state"  & iv == "log_fatal_onset_lag1"))
+cnt <- table(igo_f$level, igo_f$grid)
+stopifnot(nrow(igo_f) == 48, setequal(colnames(cnt), c("both", "lower", "upper")), all(cnt[, "lower"] == 4), all(cnt[, "upper"] == 4), all(cnt[, "both"] == 16),
+          !anyNA(igo_f$estimate))
+fmt_pct <- function(x) sprintf("%.0f%%", x * 100)
+
+igo_panel <- function(lev, grd, ttl = NULL, ylab = NULL) {
+  dat <- igo_f |> filter(level == lev, grid == grd) |>
+    mutate(L_label = factor(fmt_pct(L), levels = fmt_pct(sort(unique(L)))),
+           U_label = factor(fmt_pct(U), levels = fmt_pct(sort(unique(U)))))
+  if (grd == "both") {
+    p <- ggplot(dat, aes(x = L_label, y = estimate, color = U_label, group = U_label)) +
+      geom_hline(yintercept = 0, color = "gray55", linewidth = 0.3) +
+      geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.15, linewidth = 0.5,
+                    position = position_dodge(width = 0.6)) +
+      geom_point(size = 1.8, position = position_dodge(width = 0.6)) +
+      scale_color_brewer(palette = "Dark2", name = "Upper threshold U") +
+      labs(x = "Lower threshold L")
+  } else {
+    xv <- if (grd == "lower") "L_label" else "U_label"
+    p <- ggplot(dat, aes(x = .data[[xv]], y = estimate)) +
+      geom_hline(yintercept = 0, color = "gray55", linewidth = 0.3) +
+      geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.15, linewidth = 0.6, color = ACCENT) +
+      geom_point(size = 2.2, color = ACCENT) +
+      labs(x = if (grd == "lower") "Lower threshold L" else "Upper threshold U")
+  }
+  p + labs(title = ttl, y = ylab) + theme_app(11) +
+    theme(axis.text.x = element_text(size = 9), plot.title = element_text(size = 11))
+}
+YS <- "System (JS)\nCoefficient (95% CI)"
+YT <- "State (churn)\nCoefficient (95% CI)"
+fig_b5 <- (igo_panel("system", "lower", "Lower tail dropped", YS) |
+           igo_panel("system", "upper", "Upper tail dropped") |
+           igo_panel("system", "both",  "Both tails dropped")) /
+          (igo_panel("state",  "lower", NULL, YT) |
+           igo_panel("state",  "upper") |
+           igo_panel("state",  "both")) +
+  plot_layout(guides = "collect") & theme(legend.position = "bottom")
+save_fig("fig_app_compact_igo_share.png", fig_b5, width = 10, height = 6.5)
+
 print(sessionInfo())
-cat("\nDone. Upload the four fig_app_compact_*.png files to Overleaf figs/.\n")
+cat("\nDone. Upload the five fig_app_compact_*.png files to Overleaf figs/.\n")
