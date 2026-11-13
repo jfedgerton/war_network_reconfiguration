@@ -36,7 +36,9 @@ n_orig <- r_pub$n
 
 # 3. Merge history; restrict to 1822-2011 (data are 1948-2001)
 source(file.path(CODE, "hist/add_history.R"))
-d <- add_history(d, "numa", "numb", "year")
+# [2026-11-13 audit] DV is a t+1 lead (checked vs COW dyadic MID: P(onset at t+1 | DV=1) > .9) -> anchor history on the outcome year
+d$yr_out <- d$year + 1
+d <- add_history(d, "numa", "numb", "yr_out")
 d <- filter(d, year >= 1822, year <= 2011)
 cat("\nNA counts in history/benchmark vars:\n"); print(colSums(is.na(d[, HIST_VARS])))
 d <- d[complete.cases(d[, c(v, HIST_VARS)]), ]

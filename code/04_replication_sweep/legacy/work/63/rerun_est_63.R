@@ -25,11 +25,13 @@ probit_oim_cl <- function(f, data, cl) {
 }
 full <- probit_oim_cl(f0, d[complete.cases(d[, c(all.vars(f0), "dyadid")]), ], "dyadid")
 cat("FULL SAMPLE (pub b -2.0411, SE .6197, N 207,089):\n"); print(full)
-d <- add_history(d, "statea", "stateb", "year")
+# [2026-11-13 audit] DV is a t+1 lead (checked vs COW dyadic MID: P(onset at t+1 | DV=1) > .9) -> anchor history on the outcome year
+d$yr_out <- d$year + 1
+d <- add_history(d, "statea", "stateb", "yr_out")
 HV <- c("hist_dyad_w15","hist_mono_w15","hist_dyad_w26","hist_mono_w26","bm_cinc_w15","bm_democ_w15")
 ds <- d[d$year >= 1822 & d$year <= 2011, ]
 ds <- ds[complete.cases(ds[, c(all.vars(f0), "dyadid", HV)]) & is.finite(ds$bm_cinc_w15) & is.finite(ds$bm_democ_w15), ]
-cat("common sample N:", nrow(ds), "\n"); stopifnot(nrow(ds) == 202241)
+cat("common sample N:", nrow(ds), "\n"); stopifnot(nrow(ds) == 204921)
 ADD <- list(m0 = NULL, mD = "hist_dyad_w15", mDM = c("hist_dyad_w15","hist_mono_w15"), m26 = c("hist_dyad_w26","hist_mono_w26"), bC = "bm_cinc_w15", bD = "bm_democ_w15")
 R <- lapply(ADD, function(a) { f <- if (is.null(a)) f0 else update(f0, as.formula(paste(". ~ . +", paste(a, collapse = "+")))); probit_oim_cl(f, ds, "dyadid") })
 tab <- do.call(rbind, R); print(tab)

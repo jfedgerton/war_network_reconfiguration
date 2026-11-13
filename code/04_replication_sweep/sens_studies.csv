@@ -17,7 +17,6 @@ id,dial,scope
 42,Y,full
 43,N,full
 5,Y,full
-50,Y,full
 54,Y,full
 62,Y,full
 63,Y,full
@@ -29,7 +28,6 @@ id,dial,scope
 C1,N,full
 C2,N,full
 C5,N,full
-C6,N,full
 C7,N,full
 D2,N,full
 N06,N,full
@@ -39,7 +37,6 @@ P8_019,N,full
 P8_031,N,full
 P8_032,N,full
 P8_033,N,full
-P8_041,N,full
 P8_046,N,full
 P8_048,N,full
 P8_049,N,full
@@ -48,8 +45,6 @@ X001,N,full
 X003,N,full
 X019,N,full
 X020,N,full
-X022,N,full
-X025,N,full
 X033,N,full
 X035,N,full
 X039,N,full
@@ -62,15 +57,12 @@ X066,N,full
 X069,N,full
 X074,Y,full
 X076,Y,full
-X077,N,split
 X078,N,full
-X079,N,full
 X080,N,full
 X082,Y,full
 X087,Y,full
 X090,N,full
 X091,Y,full
-X092,N,full
 114,N,split
 14,N,split
 47,N,split
@@ -83,7 +75,6 @@ P8_004,N,split
 P8_012,N,split
 P8_025,N,split
 P8_035,N,split
-P8_037,N,split
 X009,N,split
 X014,N,split
 X017,N,split
@@ -112,7 +103,6 @@ P9_062,N,split
 P9_066,N,full
 P9_067,N,split
 P9_071,N,full
-P9_078,N,full
 P9_079,N,full
 P9_080,N,full
 P9_085,N,split

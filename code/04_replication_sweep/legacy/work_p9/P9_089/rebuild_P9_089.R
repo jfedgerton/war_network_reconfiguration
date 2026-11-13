@@ -39,6 +39,9 @@ s <- s %>% left_join(dif, by = c("ccode", "year")) %>% left_join(nmid, by = c("c
 # ---- TRIANGLE PR dyads, L/H assignment at t, exogenous lagged one year ----
 t <- read.delim(file.path(ROOT, "recA/or/TRIANGLE.tab")); stopifnot(nrow(t) == 39996)
 t <- t %>% filter(year >= 1950, year <= 1992) %>% mutate(dyadid = 1000 * statea + stateb)
+# [2026-11-13 audit] dispute1 in row year t is MID at t+1 (checked vs COW dyadic MID). The article pairs MID_t with DEM_t and exogenous at t-1,
+# so the DV is the same dyad's dispute1 from row t-1.
+t <- t %>% left_join(read.delim(file.path(ROOT, "recA/or/TRIANGLE.tab")) %>% transmute(statea, stateb, year = year + 1, dispute_t = dispute1), by = c("statea", "stateb", "year"))
 n0 <- nrow(t)
 lag1 <- s %>% mutate(year = year + 1) %>% select(ccode, year, polity2l = polity2, infl, lgdppc, growth, open, diffusion, nmid)
 t <- t %>% left_join(p %>% rename(pa = polity2), by = c("statea" = "ccode", "year")) %>% left_join(p %>% rename(pb = polity2), by = c("stateb" = "ccode", "year")) %>%
@@ -59,17 +62,17 @@ demX <- c("polity2lL", "polity2lH", "yr", "inflL", "inflH", "inflyL", "inflyH", 
           "diffusionL", "diffusionH", "thirdL", "thirdH")
 midX <- c("contig_l", "ally_l", "caprat_l", "dep_l", "growth_low")
 allX <- unique(c(demX, midX))
-vars <- c("dispute1", "DEML", "DEMH", allX, "dyadid")
+vars <- c("dispute_t", "DEML", "DEMH", allX, "dyadid")
 cat("PR dyad-years 1950-92:", nrow(t), " missing:\n"); print(sapply(t[, vars], function(x) sum(is.na(x))))
 TERM <- "DEML_hat"
 fit2s <- function(data, extra = character(0)) {
   X1 <- paste(c(allX, extra), collapse = " + ")
   data$DEML_hat <- fitted(lm(as.formula(paste("DEML ~", X1)), data = data))
   data$DEMH_hat <- fitted(lm(as.formula(paste("DEMH ~", X1)), data = data))
-  fit_bin("dispute1", c("DEML_hat", "DEMH_hat", midX, extra), data, "probit", "~dyadid", terms = TERM)
+  fit_bin("dispute_t", c("DEML_hat", "DEMH_hat", midX, extra), data, "probit", "~dyadid", terms = TERM)
 }
 d0 <- t[complete.cases(t[, vars]), ]
-cat("complete-case N:", nrow(d0), "(published 11,644)  MID dyad-years", sum(d0$dispute1), "\n")
+cat("complete-case N:", nrow(d0), "(published 11,644)  MID dyad-years", sum(d0$dispute_t), "\n")
 full <- fit2s(d0)
 cat("\nREBUILT vs published: DEML_hat b", full[[TERM]][["b"]], "(pub -0.0207) se", full[[TERM]][["se"]], "(pub 0.0067) N", attr(full, "n"), "(pub 11,644)\n")
 ds <- common_sample(t, vars, "statea", "stateb", "year")

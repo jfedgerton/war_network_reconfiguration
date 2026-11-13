@@ -37,7 +37,9 @@ fit <- function(dat, add, tag) {
 }
 rep <- fit(d, character(0), "REPRO Table 2 baseline (full GEE sample)")
 
-d <- add_history_monadic(d, "ccode", "year")
+# [2026-11-13 audit] DV is initiations in t+1 (Kinne 2012 p.317, fn.19) -> anchor history on the outcome year
+d$yr_out <- d$year + 1
+d <- add_history_monadic(d, "ccode", "yr_out")
 s <- d[d$year >= 1822 & d$year <= 2011, ]
 s <- s[complete.cases(s[, c("hist_mono_w15","hist_mono_w26","bm_cinc_w15","bm_democ_w15")]) & is.finite(s$bm_cinc_w15) & is.finite(s$bm_democ_w15), ]
 cat("common sample N =", nrow(s), " dropped =", nrow(d) - nrow(s), "\n"); stopifnot(nrow(s) > 0.9 * nrow(d))

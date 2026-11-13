@@ -118,7 +118,7 @@ FIG_NOTE <- "Shaded band: |z| < 1.96 (.05 reference). Colors use each study's ow
 STEPS <- c("Conflict\nhistory", "Benchmark\n(lagged CINC ratio)", "Benchmark\n(joint democracy)")
 
 # expected counts from the appendix text (Section 3.1): studies, and lose + flip
-EXPECT <- list(DEMOCRACY = c(n = 40, lose_flip = 7, med = 0.81), CAPITALISM = c(n = 11, lose_flip = 4, med = 0.75))   # [2026-11-11] audit2 + additions
+EXPECT <- list(DEMOCRACY = c(n = 36, lose_flip = 7, med = 0.78), CAPITALISM = c(n = 10, lose_flip = 3, med = 0.83))   # [2026-11-13] final audit pool (126)
 FAM_NAME <- c(DEMOCRACY = "Democratic peace", CAPITALISM = "Capitalist peace")
 
 family_row <- function(FAM, letter_a, letter_b, show_caption) {

@@ -1,6 +1,7 @@
 # Rerun 103: Bak 2017 International Interactions
 # Headline: Table 1 col 1, probit COW_cwinit (MID initiation vs protege), robust cluster(dyadid), directed dyad-years.
-# Headline tie: relcincally (defensive-ally capability relative, weighted by proximity).
+# Headline tie: cowcontigdum (at least one contiguous defensive ally for the target; H1, Table 1 col 1).
+# [2026-11-13] was relcincally, which Bak lists as a control (p. 118); switched to the headline term (PI).
 ROOT <- Sys.getenv("SWEEP_DATA"); OUT <- Sys.getenv("SWEEP_OUT"); CODE <- Sys.getenv("SWEEP_CODE")
 stopifnot(nzchar(ROOT), nzchar(OUT), nzchar(CODE))
 source(file.path(CODE, "work/rerun_helpers_b118.R"))
@@ -13,7 +14,7 @@ sink(logf, split = TRUE, append = TRUE)
 control <- c("pchaloff","pchalneu","defensiveallydum","COW_contigdum","rival","pastconflict","COW_sscore",
              "COW_parity","jointdem","peace","peace2","peace3")
 base_rhs <- c("cowcontigdum","relcincally","fpsimsrswvas", control)
-dv <- "COW_cwinit"; tie <- "relcincally"
+dv <- "COW_cwinit"; tie <- "cowcontigdum"   # [2026-11-13] was "relcincally" (a control)
 # read only needed columns (memory: machine shared)
 d <- as.data.frame(read_dta(file.path(W, "data.dta"), col_select = all_of(c("ccode1","ccode2","year","dyadid", dv, base_rhs))))
 n_orig_file <- nrow(d); stopifnot(n_orig_file == 585467)
@@ -23,7 +24,7 @@ m_rep <- fit_glm(base_rhs, dv, d, "probit", "dyadid")
 cat("\n==== REPRODUCTION (full sample) ====\n"); print(coeftable(m_rep)); cat("N =", nobs(m_rep), "\n")
 stopifnot(nobs(m_rep) == 582126)
 n_orig <- nobs(m_rep)
-b_pub <- -0.478  # table1.txt col 1 (se 0.073), 3-decimal outreg2 rounding
+b_pub <- -0.183  # Table 1 col 1 (se 0.042) [2026-11-13]; relcincally was -0.478 (0.073)
 b_repro <- unname(coef(m_rep)[tie]); p_repro <- coeftable(m_rep)[tie, 4]
 rel <- abs(b_repro - b_pub) / abs(b_pub)
 reproduced <- ifelse(rel <= 0.10 & p_repro < .05, "REPRODUCED", "NOT_REPRODUCED")
@@ -43,7 +44,7 @@ if (Sys.getenv("SWEEP_SENS") == "1") {
 }
 
 n_yr_drop <- sum(complete.cases(d[, c(dv, base_rhs)]) & d$year < 1822)
-notes <- sprintf("Headline relcincally Tbl1 col1 (pub -0.478 rounded; rel.diff %.3f). Authors already control rival + pastconflict + cubic peace years. Dropped %d obs pre-1822, rest of drop from benchmark missingness. Directed dyads (history symmetric).",
+notes <- sprintf("Headline cowcontigdum Tbl1 col1 (pub -0.183; rel.diff %.3f). Authors already control rival + pastconflict + cubic peace years. Dropped %d obs pre-1822, rest of drop from benchmark missingness. Directed dyads (history symmetric).",
                  rel, n_yr_drop)
 write_result(103, "Bak 2017", reproduced, b_pub, b_repro, "probit, cluster dyadid", tie, n_orig, nrow(ds), R, "Y", notes)
 sink()

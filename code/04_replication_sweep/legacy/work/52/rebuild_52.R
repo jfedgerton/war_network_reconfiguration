@@ -4,7 +4,10 @@
 # Published design (paper p.662-668, do-file file45999_benson.do): mlogit HOSTLEVD (0 none,1 threat,2 show,3 use,4 war)
 #   on DyadEconDissim IntOrderEconDist DyadicSecDissim IntOrderSecDist Democ Capratio Geodistance Contiguity Alliance Peaceyears,
 #   robust cluster(dyadid); 1951-85; n = 189,214 (rows in both orderings of each pair, as in the posted file).
-# KEY TERM (fixed before estimation): Model 1, DyadEconDissim (intra-dyadic economic dissimilarity, trade-based tie),
+# [2026-11-13 audit, PI] KEY TERM switched to Model 2 (the author's preferred model, p.670 fn15 'the most promising model'):
+#   DyadTotalDissim = DyadicSecDissim x DyadEconDissim ('intra-dyadic total dissim'), contrast 0 -> use of force,
+#   published factor change 0.872** (z = -2.119) -> b_pub = ln(0.872); Model 2 adds IntOrderTotDist = IntOrderSecDist x IntOrderEconDist.
+# Former KEY TERM: Model 1, DyadEconDissim (intra-dyadic economic dissimilarity, trade-based tie),
 #   contrast 0 -> use of force (modal hostile outcome, 452/734 events). Published factor change 1.295 (z=3.132) -> b_pub = ln(1.295).
 suppressMessages({library(dplyr); library(haven); library(peacesciencer)})
 ROOT <- Sys.getenv("SWEEP_DATA"); OUT <- Sys.getenv("SWEEP_OUT"); CODE <- Sys.getenv("SWEEP_CODE")
@@ -53,32 +56,33 @@ b$lo <- pmin(b$ccode1, b$ccode2); b$hi <- pmax(b$ccode1, b$ccode2)
 d <- b %>% left_join(ctl, by = c("lo" = "ccode1", "hi" = "ccode2", "year" = "year"))
 stopifnot(nrow(d) == nrow(b))
 d <- d %>% filter(year >= 1951, year <= 1985)
-vars <- c("hostd","DyadEconDissim","IntOrderEconDist","DyadicSecDissim","IntOrderSecDist",
+d$DyadTotalDissim <- d$DyadicSecDissim * d$DyadEconDissim; d$IntOrderTotDist <- d$IntOrderSecDist * d$IntOrderEconDist   # Model 2 products
+vars <- c("hostd","DyadTotalDissim","IntOrderTotDist","DyadEconDissim","IntOrderEconDist","DyadicSecDissim","IntOrderSecDist",
           "Democ","Capratio","Geodistance","Contiguity","Alliance","peaceyrs")
 d0 <- d[complete.cases(d[, vars]) & is.finite(d$Capratio), ]
 lg("rebuilt 1951-85 complete-case n =", nrow(d0), "(published 189,214)")
 lg("DV distribution:", paste(names(table(d0$hostd)), table(d0$hostd), collapse = "; "), "(pub: 38 threat, 202 show, 452 use, 42 war; counts include both orderings)")
 
-rhs <- c("DyadEconDissim","IntOrderEconDist","DyadicSecDissim","IntOrderSecDist","Democ","Capratio","Geodistance","Contiguity","Alliance","peaceyrs")
+rhs <- c("IntOrderTotDist","DyadTotalDissim","DyadEconDissim","IntOrderEconDist","DyadicSecDissim","IntOrderSecDist","Democ","Capratio","Geodistance","Contiguity","Alliance","peaceyrs")
 m_pub <- mlogit_fit(d0$hostd, d0[, rhs], cluster = d0$dyadid)
-lg("\n==== Reproduction attempt (Model 1, cluster = authors' dyadid) ====")
+lg("\n==== Reproduction attempt (Model 2, cluster = authors' dyadid) ====")
 capture.output(print(round(m_pub$coeftable, 4)), file = logf, append = TRUE); print(round(m_pub$coeftable, 4))
-st <- mlogit_stat(m_pub, "DyadEconDissim", 3)
-b_pub <- log(1.295)
-lg(sprintf("DyadEconDissim 0->use: b_repro=%.4f (se %.4f, p %.4g) vs b_pub=%.4f (z=3.132)", st["b"], st["se"], st["p"], b_pub))
+st <- mlogit_stat(m_pub, "DyadTotalDissim", 3)
+b_pub <- log(0.872)
+lg(sprintf("DyadTotalDissim 0->use: b_repro=%.4f (se %.4f, p %.4g) vs b_pub=%.4f (z=-2.119)", st["b"], st["se"], st["p"], b_pub))
 rel <- abs(st["b"] - b_pub) / abs(b_pub)
-status <- rebuild_verdict("52", "DyadEconDissim", unname(st["b"]), unname(st["p"]), b_pub, TRUE)   # round-2 rule (was: sign and p < .05)
+status <- rebuild_verdict("52", "DyadTotalDissim", unname(st["b"]), unname(st["p"]), b_pub, TRUE)   # round-2 rule (was: sign and p < .05)
 lg("rel diff:", round(rel, 3), "->", status, "(sign & significance vs published)")
 
 # ---- 4. history battery ----
 d0 <- add_history(d0, "ccode1", "ccode2", "year"); d0$year_h <- d0$year
 db <- battery_sample(d0, c(vars, "dyadid"))
 fitter <- function(r, data) mlogit_fit(data$hostd, data[, r], cluster = data$dyadid)
-stat <- function(m) mlogit_stat(m, "DyadEconDissim", 3)
+stat <- function(m) mlogit_stat(m, "DyadTotalDissim", 3)
 R <- run_battery(db, rhs, fitter, stat, logf)
 write_result(52, "Benson 2004", "REBUILT", b_pub, unname(st["b"]), "multinomial logit (HOSTLEVD 0-4), cluster dyadid; key contrast 0->use of force",
-  "DyadEconDissim (0->use of force)", 189214, nrow(db), R, "Y",
+  "DyadTotalDissim (0->use of force)", 189214, nrow(db), R, "Y",
   paste0(status, ": tie IVs are the authors' (PRIO file); DV/controls rebuilt: GML MID onset hostlev (2-5 -> 1-4), ongoing years = 0; peace years from GML onsets since 1816; ",
          "Democ=min polity2; Capratio=CINC high/low; Geodistance=capdist; Contiguity 1-5 (6=none); Alliance COW 1 def/2 neut/3 ent/4 none; ",
          "rows in both orderings as in posted file (n_pub 189,214 implies this); cluster = authors' dyadid (=1000+ccode1+ccode2, non-unique across pairs). ",
-         "Key fixed a priori: Model 1 DyadEconDissim, 0->use contrast; published OR 1.295 (z 3.13). Rel diff ", round(rel, 2), "."))
+         "Key (2026-11-13 PI): Model 2 DyadTotalDissim (sec x econ dissim), 0->use contrast; published OR 0.872 (z -2.12); was Model 1 DyadEconDissim. Rel diff ", round(rel, 2), "."))

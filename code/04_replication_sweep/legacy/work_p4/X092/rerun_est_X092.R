@@ -43,7 +43,9 @@ FG <- function(r, data, waves = "seq") {
 # Full-sample check vs published Table 1 Model 2 (N 35,685): order-based (force) vs calendar-spaced AR(1)
 rep_seq <- FG(rhs0, d, "seq"); rep_yr <- FG(rhs0, d, "year")
 cat("\nPUBLISHED M2: smldmat -.050 (.010); smldep -32.460 (12.635); smigoabi -.014 (.005); N 35,685\n")
-s <- common_sample(d, c("dispute1", rhs0, "dyadid"), "statea", "stateb", "year")
+# [2026-11-13 audit] TRIANGLE dispute1 in row year t is MID at t+1 (checked vs COW dyadic MID) -> anchor history on the outcome year
+d$yr_out <- d$year + 1
+s <- common_sample(d, c("dispute1", rhs0, "dyadid"), "statea", "stateb", "yr_out")
 M <- run_six(rhs0, s, function(r, dd) FG(r, dd, "year"))   # [2026-11-08] was "seq"
 # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
 if (Sys.getenv("SWEEP_SENS") == "1") {

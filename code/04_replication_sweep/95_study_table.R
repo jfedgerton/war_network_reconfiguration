@@ -11,7 +11,7 @@ reg <- read_csv("registry.csv", col_types = cols(.default = "c"), na = character
 lab <- read_csv("study_table_labels.csv", col_types = cols(.default = "c"), na = character())
 
 pool <- reg %>% filter(pool_status == "main")
-stopifnot(nrow(pool) == 142, !anyDuplicated(pool$id))   # [2026-11-13] 140 -> 142 (inv34, inv8 added)
+stopifnot(nrow(pool) == 126, !anyDuplicated(pool$id))   # [2026-11-13] 140 -> 142 (inv34, inv8 added)
 stopifnot(setequal(pool$id, lab$id), !anyDuplicated(lab$id))
 stopifnot(all(pool$family %in% c("TIE", "DEMOCRACY", "CAPITALISM")))
 
@@ -78,6 +78,6 @@ for (f in c("TIE", "DEMOCRACY", "CAPITALISM")) {
 lines <- c(lines, "\\end{longtable}", "\\endgroup")
 
 n_rows <- sum(str_detect(lines, " \\\\\\\\$") & !str_detect(lines, "multicolumn|^Study|toprule|midrule|caption"))
-stopifnot(n_rows == 142)   # [2026-11-13] was 140
+stopifnot(n_rows == 126)   # [2026-11-13] was 140
 writeLines(lines, out_file)
 cat("wrote", out_file, "rows", n_rows, "| by family:", paste(names(table(d$family)), table(d$family), collapse = " "), "\n")

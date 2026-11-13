@@ -48,7 +48,9 @@ fit_gee <- function(rhs, extra, s, term, lab) {
 
 meta <- list(xid = "X040", short_cite = "Bayer & Bernhard 2010", journal = "CMPS", year = 2010, doi = "10.1177/0738894209352133")
 ev <- "abstract: 'dichotomous coding better captures the notion of democracy' (joint democracy vs Polity scale)"
-d <- add_history(d, "statea", "stateb", "year")
+# [2026-11-13 audit] TRIANGLE-based dispute1 is MID at t+1 -> anchor history on the outcome year
+d$yr_out <- d$year + 1
+d <- add_history(d, "statea", "stateb", "yr_out")
 for (k in names(SPEC)) {
   sp <- SPEC[[k]]
   x <- d[complete.cases(d[, all.vars(as.formula(paste("dispute1 ~", sp$rhs)))]), ]
@@ -58,17 +60,17 @@ for (k in names(SPEC)) {
   cat(k, ": rebuild N", nrow(x), " common N", nrow(s), "\n")
   M <- run_six(function(extra, z) fit_gee(sp$rhs, extra, z, k, sp$lab), s)
   # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
-  if (Sys.getenv("SWEEP_SENS") == "1" && k == "lowpol") {   # headline term only (the loop also runs jointdem6)
+  if (Sys.getenv("SWEEP_SENS") == "1" && k == "jointdem6") {   # [2026-11-13 PI] headline term is now jointdem6 (authors' preferred dichotomous coding; lowpol is the R&O foil)
     source(file.path(CODE, "hist/sens_helper.R"))
-    sens_run(id = "X040", dat = s, y = "dispute1", tie = "lowpol",
-             ctrl = c("highpol", "smldep", "smigoabi", "lcaprat2", "allies", "noncontg", "logdstab", "minrpwrs"), fe = NULL,
+    sens_run(id = "X040", dat = s, y = "dispute1", tie = "jointdem6",
+             ctrl = c("singledem6", "smldep", "smigoabi", "lcaprat2", "allies", "noncontg", "logdstab", "minrpwrs"), fe = NULL,
              fit = function(dat, add) {
-               r <- fit_gee(SPEC$lowpol$rhs, if (length(add)) paste("+", paste(add, collapse = " + ")) else "", dat, "lowpol", SPEC$lowpol$lab)$lowpol
+               r <- fit_gee(SPEC$jointdem6$rhs, if (length(add)) paste("+", paste(add, collapse = " + ")) else "", dat, "jointdem6", SPEC$jointdem6$lab)$jointdem6
                c(b = unname(r$b), se = unname(r$se), p = unname(r$p)) })
   }
   nt <- sprintf(paste0("REBUILT (%s) %s on Russett-Oneal TRIANGLE PR dyads 1919-1991 (authors' base data; B&B restrict to BNR-common sample, pub N=35,052; ours N=%d). ",
     "GEE logit AR(1) robust (geepack, waves=year). b_rebuild %.3f (SE %.3f) vs pub %.3f (%.3f). Polity = demaut (democ-autoc) in TRIANGLE; dichotomous at >=6 per paper. ",
-    "BNR/Doyle/ACLP dichotomous codings not rebuilt (data not local). History merged on year; common N=%d."),
+    "BNR/Doyle/ACLP dichotomous codings not rebuilt (data not local). History anchored on outcome year (year+1); common N=%d."),
     rep, sp$lab, nrow(x), r1$b, r1$se, sp$b_pub, sp$se_pub, M$m0[[k]]$n)
   hl <- if (k == "lowpol") "Table 1 col 1 (1919-92 PR, Polity interval)" else "Table 1 col 2 (1919-92 PR, Polity dichotomous)"
   R <- lapply(M, function(z) z[[k]])

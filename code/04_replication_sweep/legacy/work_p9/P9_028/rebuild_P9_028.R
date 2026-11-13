@@ -23,6 +23,10 @@ t <- read.delim(file.path(ROOT, "recA/or/TRIANGLE.tab"))
 stopifnot(nrow(t) == 39996, all(t$statea < t$stateb), anyDuplicated(t[, c("statea", "stateb", "year")]) == 0,
           !anyNA(t[, c("dispute1", "smigoabi", "dependa", "dependb", "demauta", "demautb", "allies", "lcaprat2", "noncontg")]))
 t <- t %>% mutate(dyadid = 1000 * statea + stateb)
+# [2026-11-13 audit] dispute1 in row year t is MID at t+1 (checked vs COW dyadic MID). The article's DV is MID in year t with lagged IGO/DEPEND,
+# so the DV is the same dyad's dispute1 from row t-1 (previously the t+1 outcome was paired with t-1 covariates, a two-year lag).
+t <- t %>% left_join(t %>% transmute(statea, stateb, year = year + 1, dispute_t = dispute1), by = c("statea", "stateb", "year"))
+stopifnot(nrow(t) == 39996)
 
 # ---- 2. lags of IGO and dependence (same dyad, years t-1 .. t-4) ----
 lagk <- function(k) t %>% transmute(statea, stateb, year = year + k, igo = smigoabi, da = dependa, db = dependb) %>%
@@ -60,14 +64,14 @@ t <- t %>% mutate(growl = pmin(ga, gb)) %>% as.data.frame()
 d <- t[t$year >= 1950 & t$year <= 1985, ]
 stopifnot(nrow(d) == 23589)
 rhs0 <- c("igo_l1", "deml", "demh", "depl_l1", "ddeph", "growl", "caprat", "allies98", "contig")
-vars <- c("dispute1", rhs0, "dyadid")
+vars <- c("dispute_t", rhs0, "dyadid")
 cat("1950-85 rows:", nrow(d), "\nmissing by var:\n"); print(sapply(d[, vars], function(x) sum(is.na(x))))
 d0 <- d[complete.cases(d[, vars]), ]
 cat("complete-case N:", nrow(d0), "(published 19,752)  igo_l1 mean", round(mean(d0$igo_l1), 2), "max", max(d0$igo_l1), "(paper: mean 33, max 129)\n")
 cat("cor igo-deml", round(cor(d0$igo_l1, d0$deml), 3), " igo-depl", round(cor(d0$igo_l1, d0$depl_l1), 3), " deml-depl", round(cor(d0$deml, d0$depl_l1), 3), "(paper .52 .47 .32)\n")
 
 # ---- 6. headline fit: probit, SE clustered on dyad ----
-fitter <- function(r, data) fit_bin("dispute1", r, data, "probit", "~dyadid", terms = "igo_l1")
+fitter <- function(r, data) fit_bin("dispute_t", r, data, "probit", "~dyadid", terms = "igo_l1")
 full <- fitter(rhs0, d0)
 cat("\nREBUILT vs published: igo_l1 b", full$igo_l1[["b"]], "(pub -0.008) se", full$igo_l1[["se"]], "(pub 0.003) p", full$igo_l1[["p"]],
     "(pub .01) N", attr(full, "n"), "(pub 19,752)\n")
@@ -78,7 +82,7 @@ saveRDS(list(M = M, full = full), file.path(W, "M_P9_028.rds"))
 # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----
 if (Sys.getenv("SWEEP_SENS") == "1") {
   source(file.path(CODE, "hist/sens_helper.R"))
-  sens_run(id = "P9_028", dat = ds, y = "dispute1", tie = "igo_l1", ctrl = setdiff(rhs0, "igo_l1"), fe = NULL,
+  sens_run(id = "P9_028", dat = ds, y = "dispute_t", tie = "igo_l1", ctrl = setdiff(rhs0, "igo_l1"), fe = NULL,
            fit = function(dat, add) fitter(c(rhs0, add), dat)[["igo_l1"]])
 }
 

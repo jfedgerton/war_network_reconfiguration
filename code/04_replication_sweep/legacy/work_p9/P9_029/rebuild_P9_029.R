@@ -67,7 +67,9 @@ cat("democrat b", full$democrat[["b"]], "se", full$democrat[["se"]], "| publishe
 ref_cl <- fit_bin("dispute1", rhs0, d0, "logit", "~dyadid", terms = "aff_l1")   # reference only: dyad-clustered SE
 cat("reference dyad-clustered SE for aff_l1:", ref_cl$aff_l1[["se"]], "\n")
 
-ds <- common_sample(t, vars, "statea", "stateb", "year")
+# [2026-11-13 audit] TRIANGLE dispute1 in row year t is MID at t+1 (checked: P(dispute1=1 | MID onset at t+1)=.994) -> anchor on outcome year
+t$yr_out <- t$year + 1
+ds <- common_sample(t, vars, "statea", "stateb", "yr_out")
 M <- run_six(rhs0, ds, fitter)
 saveRDS(list(M = M, full = full, n_used = nrow(ds)), file.path(W, "M_P9_029.rds"))
 

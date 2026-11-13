@@ -42,7 +42,9 @@ cat("synthetic gradient check max abs diff:", max(abs(ga - gn)), "\n"); stopifno
 full <- d[complete.cases(d[, vars]) & (d$fcwmidinit == 0 | !is.na(d$fcwmid251)), ]
 r_full <- fit_hp(character(0), full); n_orig <- attr(r_full, "n")
 d$fcwmid251_chk <- ifelse(d$fcwmidinit == 1, d$fcwmid251, 0)
-ds <- common_sample(d, c(vars, "fcwmid251_chk"), "ccode1", "ccode2", "year"); rm(d, full); invisible(gc())
+# [2026-11-13 audit] fcwmidinit/fcwmid251 are t+1 leads (checked vs COW dyadic MID: P(onset at y+1 | init=1)=.87 vs .25 at y) -> anchor on outcome year
+d$yr_out <- d$year + 1
+ds <- common_sample(d, c(vars, "fcwmid251_chk"), "ccode1", "ccode2", "yr_out"); rm(d, full); invisible(gc())
 fitter <- function(rhs, data) fit_hp(setdiff(rhs, vars), data)
 M <- run_six(vars, ds, fitter)
 saveRDS(list(M = M, r_full = r_full, n_orig = n_orig, n_used = nrow(ds)), file.path(W, "M_P8_003.rds"))

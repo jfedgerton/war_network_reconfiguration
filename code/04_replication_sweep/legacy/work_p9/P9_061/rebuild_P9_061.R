@@ -23,6 +23,9 @@ sink(file.path(W, "log_P9_061.txt"), split = TRUE)
 t <- read.delim(file.path(ROOT, "recA/or/TRIANGLE.tab"))
 stopifnot(nrow(t) == 39996, all(t$statea < t$stateb), anyDuplicated(t[, c("statea", "stateb", "year")]) == 0,
           !anyNA(t[, c("dispute1", "allies", "lcaprat2")]), all(t$lcaprat2 >= 0), all(t$dispute1 %in% 0:1))
+# [2026-11-13 audit] dispute1 in row year t is MID at t+1 (checked vs COW dyadic MID). Use the same dyad's prior-row dispute1 as a
+# year-t DV so the world-war exclusion, INTER/COLD and D x Year are all keyed on the outcome year (Cederman fn. 17).
+t <- t %>% left_join(t %>% transmute(statea, stateb, year = year + 1, dispute_t = dispute1), by = c("statea", "stateb", "year"))
 t <- t %>% mutate(dyadid = 1000 * statea + stateb)
 n0 <- nrow(t)
 
@@ -57,16 +60,17 @@ stopifnot(all(t$cap > 0 & t$cap <= 1))
 d <- t[!(t$year %in% c(1914:1920, 1939:1947)), ]
 cat("rows without world wars:", nrow(d), "of", n0, "\n")
 rhs0 <- c("D", "dem_year", "oth_year", "inter", "cold", "all", "cap", "dev")
-vars <- c("dispute1", rhs0, "dyadid")
+vars <- c("dispute_t", rhs0, "dyadid")
 cat("missing by var:\n"); print(sapply(d[, vars], function(x) sum(is.na(x))))
 d0 <- d[complete.cases(d[, vars]), ]
-cat("complete-case N:", nrow(d0), "(published 43,783, 1837-1992)  MID rate", round(mean(d0$dispute1), 4), "\n")
+cat("complete-case N:", nrow(d0), "(published 43,783, 1837-1992)  MID rate", round(mean(d0$dispute_t), 4), "\n")
 
 # ---- 5. headline fit: logit, conventional SEs ----
-fitter <- function(r, data) fit_bin("dispute1", r, data, "logit", "iid", terms = "dem_year")
+fitter <- function(r, data) fit_bin("dispute_t", r, data, "logit", "iid", terms = "dem_year")
 full <- fitter(rhs0, d0)
 cat("\nREBUILT vs published: dem_year b", full$dem_year[["b"]], "(pub -0.0269) se", full$dem_year[["se"]], "(pub 0.0052) p",
     full$dem_year[["p"]], "(pub .0001) N", attr(full, "n"), "(pub 43,783)\n")
+# [2026-11-13 audit] DV is now dispute_t (MID in row year), so history is anchored on the row year
 ds <- common_sample(d, vars, "statea", "stateb", "year")
 M <- run_six(rhs0, ds, fitter)
 saveRDS(list(M = M, full = full), file.path(W, "M_P9_061.rds"))
@@ -78,7 +82,7 @@ meta <- list(pid = "P9_061", cite = "Cederman 2001", journal = "APSR", year = 20
 art <- "logit, conventional SEs (no clustering, no peace years; fn. 13), Table 3 dynamic model"
 used <- "feglm logit, iid vcov, all six steps"
 ahc <- "N (no temporal/history controls; BKT correction explicitly declined)"
-nt <- sprintf(paste0("REBUILT (no archive): TRIANGLE PR dyads 1885-1991 (paper: risky dyads 1837-1992) minus 1914-20 and 1939-47; dispute1 = MID involvement; ",
+nt <- sprintf(paste0("REBUILT (no archive): TRIANGLE PR dyads 1885-1991 (paper: risky dyads 1837-1992) minus 1914-20 and 1939-47; DV = prior-row dispute1 (MID involvement in year t; TRIANGLE dispute1 leads one year); ",
   "D = both Polity IV 2014 DEMOC >= 6 (paper Polity III; -66/-77/-88 missing); D x Year and (1-D) x Year raw calendar year; INTER 1921-38, COLD 1948-92; ",
   "ALL = TRIANGLE allies; CAP = exp(-lcaprat2) (weaker/stronger CINC); DEV = lower NMC v4 energy per capita, raw (paper: EUGene NMC, transform not stated). ",
   "Full-sample rebuilt b=%.6f se=%.6f p=%.4g N=%d vs published -0.0269 (0.0052) N 43,783. Common 1822-2011 sample N=%d."),

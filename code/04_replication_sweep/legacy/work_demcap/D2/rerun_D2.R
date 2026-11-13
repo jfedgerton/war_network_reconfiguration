@@ -35,7 +35,9 @@ st_k <- c(demlo = { b <- bp[["demlo"]]; attr(b, "sig") <- TRUE; repro_status(b, 
 print(st_k); cat("N repro:", n_orig, " years:", range(d$year[complete.cases(d[, all.vars(f0)])]), "\n")
 
 d <- d[, c(all.vars(f0), "dyadid", "statea", "stateb", "year")]
-ds <- common_sample(d, f0, "dyadid", "statea", "stateb", "year"); rm(d); gc()
+# [2026-11-13 audit] maoznewl is MID at t+1 (same file/DV as C1, C2) -> anchor history on the outcome year
+d$yr_out <- d$year + 1
+ds <- common_sample(d, f0, "dyadid", "statea", "stateb", "yr_out"); rm(d); gc()
 M <- run_six(f0, ds, K, "dyadid", W)
 
 # ---- sensitivity hook: runs only under run_sensitivity.R (SWEEP_SENS=1), never in the main sweep ----

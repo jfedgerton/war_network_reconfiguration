@@ -116,7 +116,7 @@ row_id,id,key_term,out_file,row_filter,col_b0,col_p0,col_b_hist,col_p_hist,col_b
 119,58,lngleddeplowAsia,work/58/key_58_extract.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 120,X001,pdemdtar,results_p4/X001__pdemdtar.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 121,C2,capopenl,results_demcap/C2__capopenl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
-122,52,DyadEconDissim,results/52.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+122,52,DyadTotalDissim,results/52.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 123,X001,pdemdin,results_p4/X001__pdemdin.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 124,122,L_exports,results/122.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 125,17,extdeporig,results_estaudit/17__extdeporig.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
@@ -170,7 +170,7 @@ row_id,id,key_term,out_file,row_filter,col_b0,col_p0,col_b_hist,col_p_hist,col_b
 179,57,lagreiall,results/57.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 180,115,out_group [LPM],results_estaudit/115__out_group__LPM_.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 181,X092,smldep,results_estaudit/X092__smldep.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
-182,103,relcincally,results/103.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+182,103,cowcontigdum,results/103.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 183,C7,capopenl,results_demcap/C7__capopenl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 184,X093,ltrl,results_p4/X093__ltrl.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 185,X061,allytarg_win,results_p4/X061__allytarg_win.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
