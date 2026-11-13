@@ -21,7 +21,8 @@
 #   prior conflict strengthens a tie, conditioning should push the coefficient
 #   AWAY from zero (amplification).
 #
-#   So every cell records `prediction_held`, and the headline statistic is the
+#   So every cell records `prediction_held` (scored on the SIGNED shift of the coefficient; see the
+#   [2026-11-13] note in the loop), and the headline statistic is the
 #   share of specifications in which the prediction was correct. That converts
 #   a 6-for-6 result in the main text into an N-for-N result here.
 #
@@ -422,6 +423,12 @@ run_tie_cell <- function(layers_subset, method, tfm, dyad_work) {
         attenuation <- 100 * (1 - abs(beta_cond) / abs(beta_base))
         predicted   <- if (beta_tie < 0) "attenuate" else "amplify"
         observed    <- if (abs(beta_cond) < abs(beta_base)) "attenuate" else "amplify"
+        # [2026-11-13] The attenuate/amplify labels assume a NEGATIVE baseline tie coefficient (true in the main
+        # specification). When beta_base > 0 (e.g., trade, residualized offensive), moving in the predicted
+        # direction flips the label. The test is therefore scored on the SIGNED shift: conditioning removes the
+        # omitted-variable bias, so the coefficient should move opposite to sign(leg 2) x sign(tie equation).
+        predicted_shift <- -sign(beta_leg2) * sign(beta_tie)
+        observed_shift  <- sign(beta_cond - beta_base)
 
         out[[length(out) + 1]] <- tibble(
           layers = combo_name, n_layers = length(layers_subset),
@@ -440,7 +447,9 @@ run_tie_cell <- function(layers_subset, method, tfm, dyad_work) {
           beta_cond = beta_cond, p_cond = p_cond,
           attenuation_pct = attenuation,
           predicted_dir = predicted, observed_dir = observed,
-          prediction_held = predicted == observed
+          predicted_shift = predicted_shift, observed_shift = observed_shift,
+          label_held = predicted == observed,                      # old magnitude-label rule (kept for reference)
+          prediction_held = predicted_shift == observed_shift      # [2026-11-13] signed rule (the reported statistic)
         )
       }  # end process loop
     }  # end monadic loop

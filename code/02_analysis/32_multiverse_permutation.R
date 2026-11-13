@@ -39,7 +39,8 @@ N_DRAWS  <- as.integer(Sys.getenv("MV_PERM_DRAWS", "500"))
 N_PROCS  <- as.integer(Sys.getenv("MV_PERM_PROCS", "10"))
 N_COMBOS <- as.integer(Sys.getenv("MV_PERM_N_COMBOS", "3"))
 PERM_BELLIG <- Sys.getenv("MV_PERM_BELLIG", "0") == "1"   # [2026-11-10]
-SUFFIX <- if (PERM_BELLIG) "_bellig" else ""
+PERM_ALT <- Sys.getenv("MV_PERM_ALT", "0") == "1"   # [2026-11-12 churn_alt] state draws use churn_alt only (fixed churn dropped)
+SUFFIX <- paste0(if (PERM_BELLIG) "_bellig" else "", if (PERM_ALT) "_alt" else "")
 stopifnot(N_DRAWS >= 1, N_PROCS >= 1, N_COMBOS >= 1)
 
 SCRIPT_07 <- here::here("code", "02_analysis", "07_robustness_multiverse.R")
@@ -63,7 +64,7 @@ run_draw <- function(k) {
   logf <- file.path(LOG_DIR, sprintf("draw_%04d.log", k))
   rc <- system2(RS, shQuote(SCRIPT_07), stdout = logf, stderr = logf,
                 env = c(sprintf("MV_PERM_DRAW=%d", k), sprintf("MV_PERM_N_COMBOS=%d", N_COMBOS),
-                        "ROBUSTNESS_WORKERS=1", "ROBUSTNESS_RESET=0", sprintf("MV_PERM_BELLIG=%d", as.integer(PERM_BELLIG))))
+                        "ROBUSTNESS_WORKERS=1", "ROBUSTNESS_RESET=0", sprintf("MV_PERM_BELLIG=%d", as.integer(PERM_BELLIG)), sprintf("MV_PERM_ALT=%d", as.integer(PERM_ALT))))
   if (rc != 0 || !file.exists(out)) return(sprintf("FAILED (rc=%s); see %s", rc, logf))
   "ok"
 }
@@ -126,6 +127,7 @@ summ <- lapply(names(STATS), function(st) {
 }) |> bind_rows() |> select(statistic, all_of(if (PERM_BELLIG) GROUP else "hypothesis"), n_specs = n, observed, null_mean, null_p95, null_max, p_value, n_draws)
 stopifnot(all(summ$p_value > 0), all(summ$p_value <= 1), !anyNA(summ$p_value))
 write_csv(summ, file.path(APPX_DIR, paste0("multiverse_permutation_summary", SUFFIX, ".csv")))
+if (!"bellig_rule" %in% names(summ)) summ$bellig_rule <- "none"   # [2026-11-13] all-dyads run: the figure code joins on (hypothesis, bellig_rule)
 print(summ)
 
 # ---- figure: null distributions with the observed value; p-values sit in the panel strips ------------------

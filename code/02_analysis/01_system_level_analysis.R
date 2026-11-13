@@ -866,19 +866,10 @@ hl_sys_body <- c(hl_sys_body, "\\midrule",
   paste("R$^2$ (full model) &", paste(sapply(hl8_models, hl8_r2, "r2"), collapse = " & "), "\\\\"),
   paste("R$^2$ (proj model) &", paste(sapply(hl8_models, hl8_r2, "wr2"), collapse = " & "), "\\\\"),
   paste("Num. groups: Order period &", paste(sapply(hl8_models, hl8_grp), collapse = " & "), "\\\\"))
-hl_sys_note <- paste0(
+hl_sys_note <- paste0(  # [2026-11-13] note text = Overleaf (shortened for the AJPS word count)
   "\\multicolumn{9}{l}{\\scriptsize{\\parbox{\\linewidth}{\\vspace{2pt}\\textit{Note:} ",
-  "DV is JS divergence between the year $t-1$ and year $t$ tie-weight distributions (not logged). ",
-  "Panel B drops from both years every dyad that was in an ongoing fatal MID in $t-1$ before computing JS; ",
-  "its lagged DV is the lag of the same peace-dyad JS. ",
-  "$^{a}$Entered as $\\log(1+x)$. The conflict measure is lagged one period ($t-1$). ",
-  "Newey-West HAC standard errors (lag $=$ 5) in parentheses. ", TAB_SCALE_NOTE,
-  "All eight columns include a quadratic year trend (\\texttt{poly(year, 2)}); terms suppressed for legibility. ",
-  "Columns 1 and 5 include the conflict measure and the year trend. Columns 2--4 and 6--8 add the counts of democracies, ",
-  "autocracies and states. Columns 3 and 7 additionally control for the lagged DV. ",
-  "Columns 4 and 8 absorb fixed effects for four international-order regimes (Concert of Europe / WWI--Interwar--WWII / Cold War / Post-Cold War). ",
-  "All MIDs and the any-MID peace rule are in Appendix Table~\\ref{tab:system_allmid}. ",
-  "COW system, 1816--2014. $^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.}}} \\\\")
+  "DV is JS divergence. Columns 5--8 drop dyads in an ongoing fatal MID at $t-1$ from both years and use the peace-dyad lagged DV. $^{a}$Entered as $\\log(1+x)$. Newey-West standard errors (lag $=$ 5) in parentheses. Coefficients and standard errors are $\\times 100$, except the lagged DV. All columns include a quadratic year trend; columns 2--4 and 6--8 add controls, columns 3 and 7 the lagged DV, and columns 4 and 8 international-order fixed effects. COW system, 1816--2014. ",
+  "$^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.}}} \\\\")
 hl_sys_tex <- c(
   "\\begin{table}[p]", "\\scriptsize", "\\begin{center}", "\\setlength{\\tabcolsep}{4pt}",
   "\\begin{tabular*}{\\linewidth}{@{\\extracolsep{\\fill}}l c c c c c c c c}", "\\toprule",
@@ -1026,15 +1017,7 @@ write_granger_fevd_by_iv <- function(iv_family, file_path, table_dir_label) {
       " & (1) & (2) & (3) & (4) \\\\", "\\midrule",
       body4, "\\bottomrule", "\\end{tabular}", "\\par\\vspace{4pt}",
       paste0(
-        "{\\footnotesize \\textit{Note:} Granger tests from VARs with AIC-selected lag order (chosen separately for each VAR) ",
-        "and 1,000 bootstrap replications. Endogenous variables are JS divergence (not logged) and the fatal MID count. ",
-        "$^{a}$Entered as $\\log(1+x)$; this applies to the fatal MID count and to the exogenous controls. ",
-        "Panel B computes JS after dropping, from both years, every dyad that was in an ongoing fatal MID in $t-1$, ",
-        "as in Table~\\ref{tab:system_main}, Panel B. Columns 1 and 3 include only a constant and trend. ",
-        "Columns 2 and 4 additionally include the exogenous counts of democracies, autocracies and states. ",
-        "The FEVD rows report the share of forecast variance in JS divergence attributable to fatal MID shocks ",
-        "at horizons $h = 1, 3, 5, 10$ years. Raw-scale variants are reported in the underlying ",
-        "\\texttt{granger\\_results\\_combined.csv} and \\texttt{fevd\\_results\\_combined.csv}. COW system, 1816--2014. ",
+        "{\\footnotesize \\textit{Note:} VARs use AIC-selected lag orders and 1,000 bootstrap replications. Endogenous variables are JS divergence and the fatal MID count, which enters as $\\log(1+x)$, as do the controls (counts of democracies, autocracies, and states). Columns 3--4 drop dyads in an ongoing fatal MID at $t-1$. All columns include a constant and trend. COW system, 1816--2014. ",  # [2026-11-13] note text = Overleaf (shortened for the AJPS word count)
         "$^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.}"),
       "\\end{table}")
     stopifnot(!any(grepl("log(1{+}", tex4, fixed = TRUE)))

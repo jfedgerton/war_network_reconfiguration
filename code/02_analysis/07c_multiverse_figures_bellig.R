@@ -79,6 +79,12 @@ stopifnot(!anyDuplicated(main_chk[, CHK_KEYS]), !anyDuplicated(none_chk[, CHK_KE
 chk <- inner_join(none_chk, main_chk, by = CHK_KEYS)
 stopifnot(nrow(chk) == nrow(main_chk), max(abs(chk$coef - chk$coef_m)) < 1e-10, max(abs(chk$pval - chk$pval_m)) < 1e-10)
 cat(sprintf("  [07c] check passed: rule 'none' reproduces robustness_specifications.csv (%d specs)\n", nrow(chk)))
+# [2026-11-12 churn_alt] State outcome = churn recomputed on each layer combination and weighting (churn_alt,
+# log_churn_alt). The fixed churn rows use 02's main network in every cell: they do not vary with the weighting and
+# vary across layer sets only through the trade-years sample, so they are dropped here (after the check above).
+specs <- specs |> filter(!(level == "state" & dv %in% c("churn", "log_churn")))
+stopifnot(all(specs$dv[specs$level == "state"] %in% c("churn_alt", "log_churn_alt")),
+          sum(specs$level == "state") == 95040)
 # Every rule must carry the same grid as "none".
 grid_n <- specs |> count(hypothesis, bellig_rule)
 stopifnot(all(table(grid_n$hypothesis) == length(BELLIG_LEVELS)),
@@ -91,7 +97,7 @@ N_SPEC <- table(specs$hypothesis)                                   # [07c] pool
 # ===========================================================================
 dv_measure <- c(
   churn = "Churn", log_churn = "Churn",
-  churn_alt = "Churn (alternate)", log_churn_alt = "Churn (alternate)",
+  churn_alt = "Churn", log_churn_alt = "Churn",   # [2026-11-12 churn_alt] the only state DV
   degree_kl = "Degree KL", log_degree_kl = "Degree KL",
   degree_wasserstein = "Degree Wasserstein", log_degree_wasserstein = "Degree Wasserstein",
   edge_turnover_pct = "Edge turnover", log_edge_turnover_pct = "Edge turnover",
@@ -115,7 +121,7 @@ stopifnot(setequal(names(bellig_lab), BELLIG_LEVELS))
 # Display order (top -> bottom) within each category.
 ITEM_ORDER <- c(
   # (a) reconfiguration measure
-  "Churn", "Churn (alternate)", "Degree KL", "Degree Wasserstein",
+  "Churn", "Degree KL", "Degree Wasserstein",
   "Edge turnover", "JS divergence", "KL divergence",
   # (b) network layer
   "Defensive alliances", "Offensive alliances", "Shared IGOs", "Trade",
@@ -215,7 +221,8 @@ wb <- readr::read_csv(file.path(OUTPUT_DIR, "robustness_specifications_wildboot.
          extra_control = dplyr::coalesce(extra_control, "none"),
          hypothesis = "H2", sig_pos = coef > 0 & (pval / 2) < 0.10,
          dv_logged = grepl("^log_", dv), iv_is_fatal = grepl("fatal", war_variable)) |>
-  filter(!is.na(coef), !is.na(pval))
+  filter(!is.na(coef), !is.na(pval), dv %in% c("churn_alt", "log_churn_alt"))   # [2026-11-12 churn_alt]
+stopifnot(nrow(wb) == 1920)   # [2026-11-12 churn_alt] appendix Table 1 row (h)
 stopifnot(nrow(wb) > 0, all(wb$model == "FE_full_wildboot"), !any(specs$model == "FE_full_wildboot"))
 boot_cells <- wb |> distinct(across(all_of(BOOT_KEYS)))
 d_inf <- bind_rows(specs |> filter(model == "FE_full_ccode_year", bellig_rule == "none"), wb) |>   # [07c] bootstrap exists for all dyads only
@@ -240,12 +247,14 @@ if (!"community" %in% names(tfe)) {
 }
 tfe <- tfe |>
   filter(community == TFE_COMMUNITY, dplyr::coalesce(extra_control, "none") == "none",   # [07c] all nine dyad rules
-         iv_term %in% c("t", "t1", "joint_sum"), !is.na(coef), !is.na(pval)) |>
+         iv_term %in% c("t", "t1", "joint_sum"), !is.na(coef), !is.na(pval),
+         dv %in% c("churn_alt", "log_churn_alt")) |>   # [2026-11-12 churn_alt]
   mutate(hypothesis = "H2", sig_pos = coef > 0 & (pval / 2) < 0.10)
 TFE_COMM_LABEL <- if (TFE_COMMUNITY == "combo") "community detected on each layer combination" else "canonical community (main network)"
 stopifnot(nrow(tfe) > 0, all(tfe$fe_structure %in% c("state_year", "state_year_comm")),
           setequal(unique(tfe$bellig_rule), BELLIG_LEVELS))   # [07c]
 N_TFE <- nrow(tfe)
+if (TFE_COMMUNITY == "combo") stopifnot(N_TFE == 207360)   # [2026-11-12 churn_alt] appendix Table 1 timing grid
 d_timing <- tfe |>
   mutate(item = dplyr::recode(iv_term, t = "Conflict in year t", t1 = "Conflict in year t-1",
                               joint_sum = "Years t and t-1 (sum)")) |>
@@ -278,10 +287,14 @@ heat <- bind_rows(d_recon, d_layer, d_trans, d_conf, d_weight, d_ctrl, d_scale, 
 
 p_heat <- ggplot(heat, aes(x = hypothesis, y = item, fill = val)) +
   geom_tile(color = "white", linewidth = 0.6) +
-  geom_text(aes(label = label), size = 3.8, color = "black") +
+  geom_text(aes(label = label, color = !is.na(val) & val > 60), size = 3.8, show.legend = FALSE) +
+  scale_color_manual(values = c(`FALSE` = "black", `TRUE` = "white"), guide = "none") +
   facet_grid(category ~ ., scales = "free_y", space = "free_y", switch = "y") +
-  scale_fill_gradient2(low = "#C0392B", mid = "white", high = "#2C6CB0",
-                       midpoint = 50, limits = c(0, 100),
+  # [2026-11-13] cividis (sequential, colorblind-safe) replaces red-white-blue diverging at 50:
+  # scale_fill_gradient2(low = "#C0392B", mid = "white", high = "#2C6CB0",
+  #                      midpoint = 50, limits = c(0, 100),
+  #                      na.value = "grey90", name = "% significant positive") +
+  scale_fill_viridis_c(option = "cividis", direction = -1, limits = c(0, 100),
                        na.value = "grey90", name = "% significant positive") +
   scale_x_discrete(position = "top") +
   labs(title = "Which specification choices matter?",
@@ -391,7 +404,9 @@ meta_df <- bind_rows(main_flags(specs), main_flags(wb |> mutate(bellig_rule = "n
          drop_defensive = !has_defensive,
          drop_igo       = !has_igo,
          add_trade      = has_trade,
-         neglog10p      = -log10(pmax(pval, 1e-300)),   # significance, continuous
+         # [2026-11-13] wild bootstrap p has a floor of 1/999 (999 draws); 20 rows store p = 0, which the 1e-300 floor
+         # turned into -log10 p = 300 and inflated the inference term. Floor those at 1/999.
+         neglog10p      = -log10(pmax(pval, if_else(dplyr::coalesce(model == "FE_full_wildboot", FALSE), 1 / 999, 1e-300))),   # significance, continuous
          sig_num        = as.integer(sig_pos),          # 0/1 for the LPM
          dv_log         = dv_logged,                    # [2026-11-08] outcome scale, raw = baseline
          bellig         = bellig_rule)                  # [07c] dyad rule, "none" = baseline

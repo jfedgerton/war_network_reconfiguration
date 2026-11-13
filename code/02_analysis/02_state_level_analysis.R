@@ -1221,7 +1221,7 @@ hl_body <- function(panels, cols, k) {
 hl_note_common <- paste0(
   "Coefficients and standard errors are multiplied by 100. ",
   "The conflict measure is $\\log(1+\\text{fatal MID onset})$ in year $t-1$. ",
-  "Panel B drops from churn every partner that was the state's opponent in a fatal MID ongoing in $t-1$; ",
+  "Columns 5--8 drop from churn every partner that was the state's opponent in a fatal MID ongoing in $t-1$; ",
   "state-years whose partners were all such opponents are undefined and excluded. ")
 hl_stars <- "$^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$; $^{\\dagger}p<0.1$.}}} \\\\"
 hl_note <- function(k, dv_text, cols_text) paste0(
@@ -1249,13 +1249,9 @@ HL_COLS_8 <- paste0(
   "Columns 4 and 8 add the two-stage multilayer community (Leiden CPM within year, Jaccard-tracked across years) ",
   "as a third fixed effect and cluster SEs by state, year and community; state-years that are singletons within a fixed effect are dropped. ",
   "Community-clustered SEs without community fixed effects are in Appendix Table~\\ref{tab:state_main_comm}. ")
-hl8_note <- paste0(
-  "\\multicolumn{9}{l}{\\scriptsize{\\parbox{\\linewidth}{\\vspace{2pt}\\textit{Note:} ", HL_DV_RAW,
-  "Coefficients and standard errors are multiplied by 100. ",
-  "$^{a}$Entered as $\\log(1+x)$; the conflict measure is fatal MID onset in year $t-1$. ",
-  "Panel B drops from churn every partner that was the state's opponent in a fatal MID ongoing in $t-1$; ",
-  "state-years whose partners were all such opponents are undefined and excluded. ", HL_COLS_8,
-  "COW system, 1816--2014. ", hl_stars)
+hl8_note <- paste0(  # [2026-11-13] note text = Overleaf (shortened for the AJPS word count)
+  "\\multicolumn{9}{l}{\\scriptsize{\\parbox{\\linewidth}{\\vspace{2pt}\\textit{Note:} ",
+  "DV is churn. Coefficients and standard errors are $\\times 100$. $^{a}$Entered as $\\log(1+x)$. Columns 5--8 drop partners that were the state's opponents in a fatal MID ongoing at $t-1$. Columns 1--2 and 5--6 include a quadratic year trend with SEs clustered by state; columns 2 and 6 add controls (N falls where Polity data are missing). Columns 3 and 7 add state and year fixed effects, clustered by state and year. Columns 4 and 8 add Leiden multilayer community fixed effects, clustered by state, year, and community; singletons are dropped. COW system, 1816--2014. ", hl_stars)
 hl_tex <- c(
   "\\begin{table}[p]", "\\scriptsize", "\\begin{center}", "\\setlength{\\tabcolsep}{4pt}",
   "\\begin{tabular*}{\\linewidth}{@{\\extracolsep{\\fill}}l c c c c c c c c}", "\\toprule",
