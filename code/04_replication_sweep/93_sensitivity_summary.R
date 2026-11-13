@@ -133,7 +133,7 @@ strip <- function(d, v, title, xlab, lim, brk, labs) {
     geom_jitter(aes(colour = status), height = .17, width = 0, alpha = .7, size = 1.8) +
     geom_segment(data = med, aes(x = m, xend = m, y = as.numeric(spec_f) - .3, yend = as.numeric(spec_f) + .3), linewidth = 1.1) +
     geom_text(data = med, aes(x = m, y = as.numeric(spec_f) + .38, label = sprintf("median %.2f", m)), size = 4.2) +
-    scale_colour_manual(values = PAL, name = NULL, drop = FALSE, guide = guide_legend(nrow = 1, override.aes = list(size = 3))) +
+    scale_colour_manual(values = PAL, name = NULL, drop = TRUE, guide = guide_legend(nrow = 1, override.aes = list(size = 3))) +   # [2026-11-12] no empty keys
     scale_x_continuous(limits = lim + c(-.05, .05), breaks = brk, labels = labs) + labs(title = title, x = xlab, y = NULL) + TH
 }
 pS <- strip(D, "r", sprintf("A. Key coefficient (%d studies)", length(keep)), "Coefficient after / coefficient before", c(-0.5, 2),
@@ -160,11 +160,11 @@ save2(pG, "fig_sweep_strength", 8, 6)
 P <- D %>% filter(scope == "full") %>% mutate(x = pmin(pmax(r_plac, -0.5), 2), y = pmin(pmax(r, -0.5), 2), spec_c = factor(gsub("\n", " ", SPEC[spec]), gsub("\n", " ", SPEC)))
 pP <- ggplot(P, aes(x, y)) + geom_hline(yintercept = 1, linetype = 2, colour = "grey40") + geom_vline(xintercept = 1, linetype = 2, colour = "grey40") +
   geom_abline(slope = 1, intercept = 0, colour = "grey75") + geom_point(aes(colour = status), alpha = .75, size = 1.9) + facet_wrap(~spec_c) +
-  scale_colour_manual(values = PAL, name = NULL, drop = FALSE, guide = guide_legend(nrow = 1, override.aes = list(size = 3))) +
+  scale_colour_manual(values = PAL, name = NULL, drop = TRUE, guide = guide_legend(nrow = 1, override.aes = list(size = 3))) +
   scale_x_continuous(limits = c(-0.55, 2.05), breaks = c(0, 1, 2), labels = c("0", "1\n(no change)", ">= 2")) +
   scale_y_continuous(limits = c(-0.55, 2.05), breaks = c(-0.5, 0, .5, 1, 1.5, 2), labels = c("<= -0.5", "0", "0.5", "1", "1.5", ">= 2")) +
-  labs(title = sprintf("Conflict history against its matched placebo (%d studies)", length(keepF)),
-       x = "Coefficient ratio with the matched placebo\n(same association with the tie variable, no information about the outcome)",
+  # [2026-11-13] in-plot title removed (study count reported in the caption/text): sprintf("... (%d studies)", length(keepF))
+  labs(x = "Coefficient ratio with the matched placebo\n(same association with the key variable, no information about the outcome)",
        y = "Coefficient ratio with\nconflict history") + TH
 save2(pP, "fig_sweep_placebo", 11, 4.8)
 
@@ -174,8 +174,11 @@ if (nrow(L)) {
     geom_point(data = T_dial, aes(lambda, med_ratio), size = 2.5, colour = "#eb6834") +
     scale_x_continuous(breaks = c(0, .25, .5, .75, 1), labels = c("0\n(placebo)", "0.25", "0.5", "0.75", "1\n(conflict history)")) +
     scale_y_continuous(limits = c(-0.55, 2.05), breaks = c(-0.5, 0, .5, 1, 1.5, 2), labels = c("<= -0.5", "0", "0.5", "1", "1.5", ">= 2")) +
-    labs(title = sprintf("Dialling in the outcome-relevant part of conflict history (%d studies)", length(dial_ids)),
-         x = "Share of the history remainder that is real (lambda)", y = "Coefficient after / coefficient before") + TH
+    # [2026-11-12] no in-plot title (caption carries it; the old title was clipped); wider right margin so "1 (conflict history)" fits
+    labs(title = NULL, x = "Share of the history remainder that is real (lambda)", y = "Coefficient after / coefficient before") + TH +
+    theme(plot.margin = margin(8, 40, 8, 8))
   save2(pL, "fig_sweep_dial", 7.5, 5)
+  # [2026-11-12] ggplot object without the title, for the appendix grid with the war-sample figure (03_figures/06_*.R)
+  saveRDS(pL + labs(title = NULL), file.path(APP, "fig_sweep_dial_plot.rds"))
 }
 cat("\n93_sensitivity_summary.R complete\n")

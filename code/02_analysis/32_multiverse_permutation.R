@@ -148,10 +148,7 @@ p <- ggplot(plot_null, aes(value)) +
   geom_histogram(bins = 40, fill = "grey70", colour = "grey35") +
   geom_vline(data = plot_obs, aes(xintercept = observed), colour = "#2C6CB0", linewidth = 1.1) +
   facet_wrap(~ panel, scales = "free", ncol = 2) +
-  labs(title = "Multiverse support under permuted conflict",
-       subtitle = sprintf("Grey: %d permuted draws. Blue: observed. Same %d layer combos in every draw, crossed with all weightings, transforms, IVs, DVs, models and controls.",
-                          N_DRAWS, N_COMBOS),
-       x = NULL, y = "Draws") +
+  labs(x = NULL, y = "Draws") +   # [2026-11-13] in-plot title/subtitle removed (caption carries them)
   theme_minimal(base_size = 14) +
   theme(panel.grid.minor = element_blank(), strip.text = element_text(face = "bold", colour = "black"),
         axis.text = element_text(colour = "black"), plot.title = element_text(face = "bold"),

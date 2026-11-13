@@ -336,3 +336,5 @@ row_id,id,key_term,out_file,row_filter,col_b0,col_p0,col_b_hist,col_p_hist,col_b
 347,ADD_D01,sel_military,results_add/ADD_D01__sel_military.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 348,ADD_D10,pop_x_poly,results_add/ADD_D10__pop_x_poly.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
 349,ADD_D11,rightparti2,results_add/ADD_D11__rightparti2.csv,,b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+350,inv34,onlyweakallied,results/inv34.csv,"key_term == ""onlyweakallied""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used
+351,inv8,nonaggression,results/inv8.csv,"key_term == ""nonaggression""",b0,p0,b_dm,p_dm,b_26,p_26,pct_bC,pct_bD,n_used

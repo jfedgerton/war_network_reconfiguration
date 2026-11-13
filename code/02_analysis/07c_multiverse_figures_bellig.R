@@ -569,9 +569,7 @@ p_fig2 <- ggplot(meta_coef, aes(x = estimate, y = term_clean)) +
                  color = "#2C6CB0") +
   geom_point(size = 1.9, color = "#2C6CB0") +
   facet_grid(hypothesis ~ outcome, scales = "free", space = "free_y") +
-  labs(title = "How each measurement decision affects the downstream analyses",
-       subtitle = "Deviation from model 3 of Tables 2 and 4 (all dyads), shown at 0.",
-       x = "Effect vs. main specification", y = NULL) +
+  labs(x = "Effect vs. main specification", y = NULL) +   # [2026-11-13] in-plot title/subtitle removed (caption carries them)
   theme_bw(base_size = 10) +
   theme(panel.grid.minor = element_blank(),
         strip.background = element_rect(fill = "gray92", color = "gray70"),

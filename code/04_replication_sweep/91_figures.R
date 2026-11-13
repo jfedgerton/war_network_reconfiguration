@@ -72,7 +72,7 @@ pA <- ggplot(d, aes(z0, zh)) +
   geom_hline(yintercept = 0, colour = "grey70") +
   geom_point(aes(size = cites, colour = status), alpha = .8) +
   # [2026-11-10] study name labels removed from the figure (requested); `lab` is still built and checked above
-  scale_colour_manual(values = PAL, name = NULL, drop = FALSE, guide = guide_legend(order = 1, nrow = 1, override.aes = list(size = 3))) +
+  scale_colour_manual(values = PAL, name = NULL, drop = TRUE, guide = guide_legend(order = 1, nrow = 1, override.aes = list(size = 3))) +   # [2026-11-12] no empty "(0)" key
   scale_size_area(max_size = 7, breaks = c(50, 150, 300), name = "Citations", guide = guide_legend(order = 2, nrow = 1)) +
   scale_x_continuous(limits = c(0, ZC + 0.3), breaks = c(0, 2, 4, 6, 8), labels = c("0", "2", "4", "6", "8+")) +
   scale_y_continuous(limits = c(-3, ZC + 0.3), breaks = c(-2, 0, 2, 4, 6, 8), labels = c("-2", "0", "2", "4", "6", "8+")) +
@@ -99,7 +99,7 @@ pB <- ggplot(sl, aes(r, step)) +
              label.size = 0, fill = "white", label.padding = unit(1.5, "pt")) +   # white box so the label does not sit on the x = 1 line
   scale_colour_manual(values = PAL, guide = "none") +
   scale_x_continuous(limits = c(-0.55, 2.05), breaks = c(-0.5, 0, .5, 1, 1.5, 2),
-                     labels = c("<= -0.5", "0", "0.5", "1\n(no change)", "1.5", ">= 2")) +
+                     labels = c("\u2264 \u22120.5", "0", "0.5", "1\n(no change)", "1.5", "\u2265 2")) +
   labs(title = "B. Change in the key coefficient\nwhen each control is added",
        x = "Coefficient after / coefficient before", y = NULL) + TH
 
@@ -119,7 +119,7 @@ ggsave(file.path(OUTDIR, paste0(STEM, ".pdf")), fig, width = 12, height = 6.8, d
 # Same panel A design as above, one facet per family. Colour = how the study entered (or did not enter) the pool; shape = what
 # happens to the key term with conflict history at the paper's own threshold. Out of scope, duplicates, methods-paper
 # reanalyses and non-comparable estimands are not plotted (they do not test the article's headline claim).
-GRP <- c(main = "Pooled", rebuild_outside_rule = "Rebuilt, fails the round-2 match rule", not_reproduced = "Not reproduced",
+GRP <- c(main = "Pooled", rebuild_outside_rule = "Rebuilt, baseline does not match", not_reproduced = "Not reproduced",
          null_common_sample = "Null on the common sample\nbefore adding history", author_null = "Author argues a null")
 GPAL <- setNames(c("#2a78d6", "#eb6834", "#8a2be2", "grey55", "#1a9e77"), GRP)
 FLAB <- c(TIE = "Ties", DEMOCRACY = "Democratic peace", CAPITALISM = "Capitalist peace")
@@ -160,8 +160,8 @@ pAll <- ggplot(DA, aes(z0, zh)) +
                      guide = guide_legend(order = 2, nrow = 2, override.aes = list(size = 3))) +
   scale_x_continuous(limits = c(0, ZC + 0.3), breaks = c(0, 2, 4, 6, 8), labels = c("0", "2", "4", "6", "8+")) +
   scale_y_continuous(limits = c(-3, ZC + 0.3), breaks = c(-3, -2, 0, 2, 4, 6, 8), labels = c("<= -3", "-2", "0", "2", "4", "6", "8+")) +
-  labs(title = sprintf("Significance of the key coefficient, all replication attempts (%d studies)", nrow(DA)),
-       x = "|z|, published specification (common sample)", y = "z with conflict-history controls\n(sign relative to baseline)",
+  # [2026-11-13] in-plot title removed (study count reported in the caption/text): sprintf("... (%d studies)", nrow(DA))
+  labs(x = "|z|, published specification (common sample)", y = "z with conflict-history controls\n(sign relative to baseline)",
        caption = CAP) +
   theme_minimal(base_size = 13) +
   theme(panel.grid.minor = element_blank(), plot.title = element_text(face = "bold", size = 15), legend.position = "bottom",
