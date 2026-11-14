@@ -219,7 +219,7 @@ tab <- c(
   "\\begin{table}[!htbp]",
   "\\centering",
   "\\footnotesize",
-  "\\caption{Replication sweep results for the democratic peace and capitalist peace studies.}",
+  "\\caption{Replication sweep results for the democratic peace and capitalist peace studies (pooled studies; outcome does not count ongoing dispute years).}",
   "\\label{fig:contam_democracy}",
   "\\label{fig:contam_capitalism}",
   "\\setlength{\\tabcolsep}{3pt}",   # 4pt overflowed \\linewidth by 6pt
@@ -491,7 +491,7 @@ igo_tab <- c(
   "\\bottomrule",
   "\\end{tabular}",
   "\\par\\smallskip",
-  paste0("\\begin{minipage}{\\linewidth}\\scriptsize \\textit{Note:} Cells are coefficients (standard errors) on fatal MIDs$^{a}$ at $t-1$ from the main system and state models after dropping IGOs with membership share below $L$, above $U$, or both. The cell marked -- drops no IGOs (the main specification). ",
+  paste0("\\begin{minipage}{\\linewidth}\\scriptsize \\textit{Note:} Cells are coefficients (standard errors) on fatal MIDs$^{a}$ at $t-1$ from the main system and state models after dropping IGOs with membership share below $L$, above $U$, or both. The cell marked -- drops no IGOs (the main specification). Panel A standard errors are classical. ",
          sprintf("%s statistically significant at the 0.05 level. $^{*}p < 0.05$, $^{**}p < 0.01$, $^{***}p < 0.001$.", if (n_sig == n_all) sprintf("All %d estimates are", n_all) else sprintf("%d of the %d estimates are", n_sig, n_all)),
          "\\\\ $^{a}$ $\\log(1+x)$ of the fatal MID count (system) or fatal MID onset count (state).\\end{minipage}"),
   "\\end{table}")

@@ -15,7 +15,7 @@ LOG=logs/flip_20261114.log
   Rscript code/03_figures/07_table_contam_spec.R || { echo "STOP at 07"; exit 1; }
   Rscript code/03_figures/09_tables_falsification_war.R || { echo "STOP at 09"; exit 1; }
 } > $LOG 2>&1 || { echo "STOP: summaries failed (see $LOG)"; tail -5 $LOG; exit 1; }
-for f in tableA_sweep_subsets.tex tableA_sens_subsets.tex tableA_sens_split.tex tableA_contam_falsification.tex tableA_war_samples.tex tableA_contam_spec.tex tableA_sweep_families.tex tableA_igo_share.tex; do
+for f in tableA_sweep_subsets.tex tableA_sens_subsets.tex tableA_sens_split.tex tableA_contam_falsification.tex tableA_war_samples.tex tableA_contam_spec.tex tableA_sweep_families.tex tableA_igo_share.tex tableA_sweep_overlap.tex; do
   cmp -s results/appendix/$f tmp/flip_upload/$f && echo "OK: $f identical to the Overleaf upload" \
     || { echo "STOP: $f differs from the Overleaf upload"; diff tmp/flip_upload/$f results/appendix/$f; exit 1; }
 done

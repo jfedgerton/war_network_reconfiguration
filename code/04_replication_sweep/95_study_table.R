@@ -86,4 +86,4 @@ cat("wrote", out_file, "rows", n_rows, "| by family:", paste(names(table(d$famil
 # [2026-11-14] main pool (main text) and the expanded set's outcome-overlap studies (appendix footnote)
 make_table("main", out_file, "Studies pooled in the replication sweep.", "tab:sweep_studies")
 make_table("outcome_overlap", sub("tableA_sweep_studies", "tableA_sweep_overlap", out_file),
-           "Studies in the expanded set whose outcome codes every year of a dispute.", "tab:sweep_overlap")
+           "Studies in the expanded set whose outcome codes every year of a dispute or is conditional on an ongoing dispute.", "tab:sweep_overlap")
