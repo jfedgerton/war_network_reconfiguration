@@ -1,6 +1,8 @@
 # 93_sensitivity_summary.R -- pooled appendix output from results/replication_sweep/sens/sens_<id>.rds
 # (written by run_sensitivity.R; definitions in legacy/hist/sens_helper.R). No study names are read or written here.
-# Pooled set: studies in sens_studies.csv whose headline row has in_headline == "Y" (same rule as 90_summarise.R).
+# [2026-11-14] Headline set = EXPANDED set: studies in sens_studies.csv whose headline row has pool_status "main" (pooled,
+# in_headline == "Y") or "outcome_overlap" (outcome codes every year of a dispute). The main text reports the expanded set;
+# the appendix subset table (tableA_sens_subsets.tex) reports the pooled-only and overlap-only subsets beside it.
 #
 # Writes
 #   results/replication_sweep/sens_summary.rds          aggregates only
@@ -32,20 +34,33 @@ O <- lapply(f, readRDS); names(O) <- ss$id
 stopifnot(all(ss$scope %in% c("full", "split")), identical(unname(sapply(O, function(o) isTRUE(o$split_only))), ss$scope == "split"))
 FULL <- ss$id[ss$scope == "full"]; scope <- setNames(ss$scope, ss$id)
 stopifnot(all(sapply(O[FULL], function(o) isTRUE(o$check_ok))), length(unique(sapply(O[FULL], `[[`, "draws"))) == 1)
-hd <- reg[reg$study_headline_term == "Y" & reg$id %in% ss$id, c("id", "family", "in_headline", "alpha_pub")]
+hd <- reg[reg$study_headline_term == "Y" & reg$id %in% ss$id, c("id", "family", "in_headline", "alpha_pub", "pool_status")]
 alp <- setNames(as.numeric(hd$alpha_pub), hd$id); stopifnot(!anyNA(alp))
 stopifnot(!anyDuplicated(hd$id), setequal(hd$id, ss$id))
-keep <- hd$id[hd$in_headline == "Y"]; fam <- setNames(hd$family, hd$id); keepF <- intersect(keep, FULL)
-cat("sensitivity summary:", length(keep), "pooled studies (", length(ss$id) - length(keep), "not pooled, in_headline = N );",
+EXP_STATUS <- c("main", "outcome_overlap")   # [2026-11-14] expanded set
+keep <- hd$id[hd$pool_status %in% EXP_STATUS]; fam <- setNames(hd$family, hd$id); keepF <- intersect(keep, FULL)
+pstat <- setNames(hd$pool_status, hd$id)
+stopifnot(all((hd$pool_status == "main") == (hd$in_headline == "Y")), sum(pstat[keep] == "outcome_overlap") > 0)
+cat("sensitivity summary:", length(keep), "expanded-set studies (", sum(pstat[keep] == "main"), "pooled +", sum(pstat[keep] == "outcome_overlap"), "outcome overlap;", length(ss$id) - length(keep), "others not summarised );",
     length(keepF), "with placebo and strength analyses,", length(keep) - length(keepF), "split only;",
     O[[FULL[1]]]$draws, "placebo draws per specification\n")
+# [2026-11-14] each expanded-set study must reproduce its main-sweep estimate with both history controls (est_<id>.rds b_hist),
+# so the sensitivity tables describe the same coefficients as the headline counts. Stops on a gap above 1%.
+rid <- setNames(reg$row_id[reg$study_headline_term == "Y"], reg$id[reg$study_headline_term == "Y"])
+repro <- data.frame(id = keep, b_sens = sapply(keep, function(i) O[[i]]$split["both", "b"]),
+                    b_est = sapply(keep, function(i) { e <- readRDS(file.path(EST, paste0("est_", i, ".rds"))); e$b_hist[as.character(e$row_id) == rid[[i]]] }))
+repro$rel <- abs(repro$b_sens - repro$b_est) / abs(repro$b_est)
+cat("reproduction check (sens 'both' vs est b_hist): max relative gap", signif(max(repro$rel), 3), "\n")
+if (any(repro$rel > 1e-6)) print(repro[repro$rel > 1e-6, ], row.names = FALSE)
+if (any(repro$rel > 0.01)) stop("sensitivity results do not reproduce the main sweep for: ", paste(repro$id[repro$rel > 0.01], collapse = ", "),
+                                " -- rerun: ONLY_IDS=<id> Rscript code/04_replication_sweep/run_sensitivity.R")
 SPEC <- c(dyad = "Dyadic history\nonly", mono = "Monadic history\nonly", both = "Dyadic and\nmonadic history")
 
 # ---- study x specification (in memory only) ----
 D <- bind_rows(lapply(keep, function(id) { o <- O[[id]]; s <- o$split
   pl <- if (scope[[id]] == "full") o$placebo %>% filter(lambda == 0) %>% group_by(spec) %>% summarise(b_plac = mean(b), .groups = "drop") else
     data.frame(spec = character(0), b_plac = numeric(0))
-  data.frame(id = id, family = fam[[id]], alpha_pub = alp[[id]], scope = scope[[id]], spec = names(SPEC), b0 = s["none", "b"], se0 = s["none", "se"], p0 = s["none", "p"],
+  data.frame(id = id, family = fam[[id]], set = pstat[[id]], alpha_pub = alp[[id]], scope = scope[[id]], spec = names(SPEC), b0 = s["none", "b"], se0 = s["none", "se"], p0 = s["none", "p"],
              b = s[names(SPEC), "b"], se = s[names(SPEC), "se"], p = s[names(SPEC), "p"],
              b_plac = pl$b_plac[match(names(SPEC), pl$spec)]) })) %>%
   mutate(r = b / b0, r_se = se / se0, r_plac = b_plac / b0, sig0 = p0 < alpha_pub, lose = sig0 & p >= alpha_pub,   # paper-specific threshold (registry alpha_pub)
@@ -70,7 +85,7 @@ cat("\nTie studies\n"); print(as.data.frame(T_tie), digits = 3, row.names = FALS
 SV <- c(history_both = "Conflict history\n(both)", history_dyad = "Conflict history\n(dyadic)", history_mono = "Conflict history\n(monadic)",
         joint_democracy = "Joint democracy\n(benchmark)", capability_ratio = "Capability ratio\n(benchmark)")
 G <- bind_rows(lapply(keepF, function(id) { s <- O[[id]]$strength
-  data.frame(id = id, family = fam[[id]], var = rownames(s), r2_tie = s[, "r2_tie"], r2_out = s[, "r2_out"]) }))
+  data.frame(id = id, family = fam[[id]], set = pstat[[id]], var = rownames(s), r2_tie = s[, "r2_tie"], r2_out = s[, "r2_out"]) }))
 HISTV <- c("history_both", "history_dyad", "history_mono")
 stopifnot(all(G$var %in% names(SV)), all(is.finite(G$r2_tie[G$var %in% HISTV])), all(is.finite(G$r2_out[G$var %in% HISTV])))
 G <- G %>% filter(is.finite(r2_tie), is.finite(r2_out))   # a benchmark that is constant in a study's sample has no strength there
@@ -96,26 +111,60 @@ L <- bind_rows(lapply(dial_ids, function(id) { o <- O[[id]]; stopifnot(isTRUE(o$
 T_dial <- if (nrow(L)) L %>% group_by(lambda) %>% summarise(studies = n(), med_ratio = median(r), .groups = "drop") else NULL
 if (nrow(L)) { stopifnot(all(table(L$id) == 5)); cat("\nDial (", length(dial_ids), "studies)\n"); print(as.data.frame(T_dial), digits = 3, row.names = FALSE) }
 
+# ---- [2026-11-14] appendix subset table: pooled only vs outcome overlap only vs expanded (both history controls) ----
+# Same quantities as the main tables, computed separately for each subset. Partial R2 rows use studies with an additive key term.
+sub_row <- function(dd, gg, lab) {
+  t <- tab_split(dd) %>% filter(spec == "both")
+  h <- gg %>% filter(var == "history_both")
+  # [2026-11-14] readable version (no \\resizebox): share shrinking and the placebo ratio (always 1.00) dropped; both are in Table sens_split
+  sprintf("%s & %d & %s & %s & %d of %d & %s & %s & %s \\\\", lab, t$studies, f2s(t$med_coef_ratio),
+          f2s(t$med_se_ratio), t$lose_sig + t$sign_flips, t$sig_baseline,
+          ifelse(t$placebo_n > 0, pcs(t$share_placebo_within5), "--"),
+          ifelse(nrow(h) > 0, e2s(median(h$r2_tie)), "--"), ifelse(nrow(h) > 0, e2s(median(h$r2_out)), "--"))
+}
+f2s <- function(x) sprintf("%.2f", x); pcs <- function(x) sprintf("%.0f\\%%", 100 * x)
+e2s <- function(x) ifelse(x < 0.00005, "$<$0.0001", ifelse(x < 0.0005, sprintf("%.4f", x), sprintf("%.3f", x)))
+SUBS <- list(c("Pooled studies", "main"), c("Outcome counts ongoing years", "outcome_overlap"), c("Expanded set", "both"))
+sub_lines <- function(dd, gg) unlist(lapply(SUBS, function(z) {
+  if (z[2] == "both") sub_row(dd, gg, z[1]) else sub_row(dd %>% filter(set == z[2]), gg %>% filter(set == z[2]), z[1]) }))
+stopifnot(sum(D$set == "main") > 0, sum(D$set == "outcome_overlap") > 0)
+writeLines(c("\\begin{tabular}{@{}lccccccc@{}}", "\\toprule",
+  " & & Coefficient & Standard error & Lose significance & Placebo within & Partial $R^2$ & Partial $R^2$ \\\\",
+  "Subset & Studies & ratio & ratio & or flip sign & 5\\% of baseline & key variable & outcome \\\\", "\\midrule",
+  "\\multicolumn{8}{@{}l}{\\textit{All studies}} \\\\", sub_lines(D, G), "\\addlinespace",
+  "\\multicolumn{8}{@{}l}{\\textit{Tie studies}} \\\\", sub_lines(D %>% filter(family == "TIE"), G %>% filter(family == "TIE")),
+  "\\bottomrule", "\\end{tabular}"), file.path(APP, "tableA_sens_subsets.tex"))
+cat("\nSubset table (both history controls)\n"); cat(readLines(file.path(APP, "tableA_sens_subsets.tex")), sep = "\n")
+
 saveRDS(list(split_all = T_all, split_tie = T_tie, split_additive = T_add, split_interaction = T_int, n_full = length(keepF), strength_all = S_all, strength_tie = S_tie, compare_all = C_all, compare_tie = C_tie,
              dial = T_dial, n_pooled = length(keep), draws = O[[FULL[1]]]$draws), file.path(EST, "sens_summary.rds"))
 
 # ---- tables ----
 f2 <- function(x) sprintf("%.2f", x); pc <- function(x) sprintf("%.0f\\%%", 100 * x)
-row_split <- function(t, lab) c(sprintf("\\multicolumn{9}{l}{\\textit{%s}} \\\\", lab),
-  sprintf("%s & %d & %s & %s & %s & %s & %d of %d & %s & %s \\\\", gsub("\n", " ", SPEC[t$spec]), t$studies, f2(t$med_coef_ratio), pc(t$share_shrink),
+# [2026-11-14] placebo dial folded into the split table (replaces fig_sweep_dial in the appendix): one text row of medians by lambda
+stopifnot(!is.null(T_dial), isTRUE(all.equal(T_dial$lambda, c(0, .25, .5, .75, 1))))
+dial_vals <- sprintf("%.2f", T_dial$med_ratio)
+dial_rows <- c("\\addlinespace",
+  sprintf("\\multicolumn{10}{l}{\\textit{Placebo dial, both history controls (%d pre-selected tie studies)}} \\\\", length(dial_ids)),
+  sprintf("\\multicolumn{10}{l}{Median coefficient ratio at $\\lambda = 0, 0.25, 0.5, 0.75, 1$ is %s, %s, %s, %s, and %s.} \\\\",
+          dial_vals[1], dial_vals[2], dial_vals[3], dial_vals[4], dial_vals[5]))
+# [2026-11-14] "Placebo within 5%" column added (replaces the appendix placebo scatter, fig_sweep_placebo)
+row_split <- function(t, lab) c(sprintf("\\multicolumn{10}{l}{\\textit{%s}} \\\\", lab),
+  sprintf("%s & %d & %s & %s & %s & %s & %d of %d & %s & %s & %s \\\\", gsub("\n", " ", SPEC[t$spec]), t$studies, f2(t$med_coef_ratio), pc(t$share_shrink),
           f2(t$med_se_ratio), pc(t$share_se_up), t$lose_sig, t$sig_baseline, ifelse(t$placebo_n > 0, f2(t$med_placebo_ratio), "--"),
-          ifelse(t$placebo_n > 0, as.character(t$placebo_n), "--")))
-writeLines(c("\\begin{tabular}{lcccccccc}", "\\toprule",
-  " & Studies & Coefficient & Share & Standard error & Share with & Lose & Matched placebo & Placebo \\\\",
-  "History controls added & & ratio & shrinking & ratio & larger SE & significance & coefficient ratio & studies \\\\", "\\midrule",
+          ifelse(t$placebo_n > 0, pc(t$share_placebo_within5), "--"), ifelse(t$placebo_n > 0, as.character(t$placebo_n), "--")))
+writeLines(c("\\begin{tabular}{lccccccccc}", "\\toprule",
+  " & Studies & Coefficient & Share & Standard error & Share with & Lose & Matched placebo & Placebo within & Placebo \\\\",
+  "History controls added & & ratio & shrinking & ratio & larger SE & significance & coefficient ratio & 5\\% of baseline & studies \\\\", "\\midrule",
   row_split(T_all, "All studies"), "\\addlinespace", row_split(T_add, "Additive key term"), "\\addlinespace",
-  row_split(T_int, "Interaction or product key term"), "\\addlinespace", row_split(T_tie, "Tie studies"), "\\bottomrule", "\\end{tabular}"),
+  row_split(T_int, "Interaction or product key term"), "\\addlinespace", row_split(T_tie, "Tie studies"), dial_rows, "\\bottomrule", "\\end{tabular}"),
   file.path(APP, "tableA_sens_split.tex"))   # placebo column: studies with an additive key term only
 e2 <- function(x) ifelse(x < 0.00005, "$<$0.0001", ifelse(x < 0.0005, sprintf("%.4f", x), sprintf("%.3f", x)))
 row_str <- function(t, lab) c(sprintf("\\multicolumn{4}{l}{\\textit{%s}} \\\\", lab),
   sprintf("%s & %d & %s & %s \\\\", gsub("\n", " ", SV[t$var]), t$studies, e2(t$med_r2_tie), e2(t$med_r2_out)))
 writeLines(c("\\begin{tabular}{lccc}", "\\toprule", " & Studies & Partial $R^2$ with & Partial $R^2$ with \\\\",
-  "Variable & & the tie variable & the outcome \\\\", "\\midrule", row_str(S_all, "All studies"), "\\addlinespace",
+  # [2026-11-14] audit: the first block is the studies with an additive key term (strength is not computed for interaction terms)
+  "Variable & & the key variable & the outcome \\\\", "\\midrule", row_str(S_all, "Additive key term"), "\\addlinespace",
   row_str(S_tie, "Tie studies"), "\\bottomrule", "\\end{tabular}"), file.path(APP, "tableA_sens_strength.tex"))
 
 # ---- figures ----

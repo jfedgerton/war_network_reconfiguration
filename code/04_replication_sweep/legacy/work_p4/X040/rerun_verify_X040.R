@@ -40,7 +40,7 @@ SPEC <- list(lowpol    = list(rhs = paste("highpol + lowpol +", CTRL), lab = "Ta
 fit_gee <- function(rhs, extra, s, term, lab) {
   f <- as.formula(paste("dispute1 ~", rhs, extra))
   s <- s[order(s$dyadid, s$year), ]
-  m <- geeglm(f, data = s, id = dyadid, waves = year, family = binomial, corstr = "ar1")
+  m <- geeglm(f, data = s, id = dyadid, waves = year, family = binomial, corstr = "independence")   # [2026-11-14] AR(1) fits with history diverged (alpha ~0.92, coefficients ~1e8)
   ct <- summary(m)$coefficients; ct <- as.matrix(ct[, c(1, 2, 3, 4)])
   cat("alpha:", round(unlist(m$geese$alpha), 4), "\n")
   grab(ct, term, nrow(s), paste(lab, extra))

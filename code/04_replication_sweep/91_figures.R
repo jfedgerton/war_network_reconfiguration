@@ -21,8 +21,10 @@ est <- bind_rows(lapply(f, function(x) { e <- readRDS(x); e$row_id <- as.charact
 stopifnot(!anyDuplicated(est$row_id))
 stopifnot("pool_status" %in% names(reg),
           all((reg$pool_status == "main") == (reg$study_headline_term == "Y" & reg$in_headline == "Y")))
-D <- reg %>% filter(id %in% ids, study_headline_term == "Y", in_headline == "Y") %>%
-  select(row_id, id, family, short_cite, named_illustration, citations_openalex, alpha_pub) %>%
+# [2026-11-14] main-text tie figure = EXPANDED set (pooled + outcome_overlap ties); appendix family figures stay pooled only
+D <- reg %>% filter(id %in% ids, study_headline_term == "Y",
+                    in_headline == "Y" | (family == "TIE" & pool_status == "outcome_overlap")) %>%
+  select(row_id, id, family, pool_status, short_cite, named_illustration, citations_openalex, alpha_pub) %>%
   mutate(alpha_pub = as.numeric(alpha_pub)) %>%
   inner_join(est %>% select(-id, -key_term), by = "row_id") %>%
   mutate(citations = suppressWarnings(as.numeric(citations_openalex)))
@@ -49,6 +51,11 @@ n <- table(factor(d$status, c("stay", "lose", "flip", "ns"))); cat(FAM, "status 
 LAB <- c(stay = sprintf("Stays significant (%d)", n[["stay"]]), lose = sprintf("Loses significance (%d)", n[["lose"]]),
          flip = sprintf("Significant, sign flips (%d)", n[["flip"]]), ns = sprintf("Not significant at baseline (%d)", n[["ns"]]))
 d$status <- factor(LAB[d$status], LAB)
+# [2026-11-14] open circles = studies whose outcome counts ongoing dispute years (expanded set); no study names
+SUBLAB <- c(main = "Pooled", outcome_overlap = "Outcome counts ongoing dispute years")
+stopifnot(all(d$pool_status %in% names(SUBLAB)))
+d$subset <- factor(SUBLAB[d$pool_status], SUBLAB[SUBLAB %in% SUBLAB[unique(d$pool_status)]])
+cat(FAM, "subset counts:\n"); print(table(d$subset))
 PAL <- setNames(c("#2a78d6", "#eb6834", "#8a2be2", "grey65"), LAB)
 TH <- theme_minimal(base_size = 14) + theme(panel.grid.minor = element_blank(),   # [2026-10-27] larger text for the main-text figure
   plot.title = element_text(face = "bold", size = 16), legend.position = "bottom",
@@ -59,7 +66,7 @@ top5 <- data.frame(short_cite = c("Hafner-Burton & Montgomery 2006", "Maoz et al
                    hj = c(0, 1, 0, 0, 0), lx = c(0.2, 7.6, 5.9, 0.2, 5.9), ly = c(6.4, 8, 1.35, 5.4, -0.9))
 lab <- d %>% inner_join(top5, by = "short_cite")
 # [2026-11-08] Maoz 2009 left the pool (not reproduced), so four of the five pre-specified papers are labelled; the rule is not refilled
-if (FAM == "TIE") stopifnot(nrow(lab) == 4, all(lab$named_illustration == "Y"), setequal(lab$id, D$id[D$named_illustration == "Y"])) else lab <- lab[0, ]
+lab <- lab[0, ]   # [2026-11-14] PI decision: no studies are labelled in the main-text figure
 
 # Figure note (Codex fix 2026-10-11; analysis unchanged): the shaded band marks |z| < 1.96, a fixed .05 visual reference only.
 # Status colours are classified with each paper's own threshold (registry alpha_pub, .05 or .10), so a point can sit inside the
@@ -70,7 +77,9 @@ pA <- ggplot(d, aes(z0, zh)) +
   annotate("text", x = 0.15, y = -1.75, label = "|z| < 1.96", hjust = 0, size = 4.2, colour = "grey45") +
   geom_abline(slope = 1, intercept = 0, linetype = 2, colour = "grey40") +
   geom_hline(yintercept = 0, colour = "grey70") +
-  geom_point(aes(size = cites, colour = status), alpha = .8) +
+  geom_point(aes(size = cites, colour = status, shape = subset), alpha = .8, stroke = 1) +
+  scale_shape_manual(values = setNames(c(16, 1), SUBLAB), name = NULL, drop = TRUE,
+                     guide = if (nlevels(d$subset) > 1) guide_legend(order = 3, nrow = 1, override.aes = list(size = 3)) else "none") +
   # [2026-11-10] study name labels removed from the figure (requested); `lab` is still built and checked above
   scale_colour_manual(values = PAL, name = NULL, drop = TRUE, guide = guide_legend(order = 1, nrow = 1, override.aes = list(size = 3))) +   # [2026-11-12] no empty "(0)" key
   scale_size_area(max_size = 7, breaks = c(50, 150, 300), name = "Citations", guide = guide_legend(order = 2, nrow = 1)) +
@@ -120,8 +129,9 @@ ggsave(file.path(OUTDIR, paste0(STEM, ".pdf")), fig, width = 12, height = 6.8, d
 # happens to the key term with conflict history at the paper's own threshold. Out of scope, duplicates, methods-paper
 # reanalyses and non-comparable estimands are not plotted (they do not test the article's headline claim).
 GRP <- c(main = "Pooled", rebuild_outside_rule = "Rebuilt, baseline does not match", not_reproduced = "Not reproduced",
-         null_common_sample = "Null on the common sample\nbefore adding history", author_null = "Author argues a null")
-GPAL <- setNames(c("#2a78d6", "#eb6834", "#8a2be2", "grey55", "#1a9e77"), GRP)
+         null_common_sample = "Null on the common sample\nbefore adding history", author_null = "Author argues a null",
+         outcome_overlap = "Outcome counts ongoing\ndispute years")   # [2026-11-14]
+GPAL <- setNames(c("#2a78d6", "#eb6834", "#8a2be2", "grey55", "#1a9e77", "#c9a227"), GRP)
 FLAB <- c(TIE = "Ties", DEMOCRACY = "Democratic peace", CAPITALISM = "Capitalist peace")
 DA <- reg %>% filter(id %in% ids, study_headline_term == "Y", pool_status %in% names(GRP)) %>%
   select(row_id, id, family, pool_status, alpha_pub) %>% mutate(alpha_pub = as.numeric(alpha_pub)) %>%

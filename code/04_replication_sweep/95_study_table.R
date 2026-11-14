@@ -10,9 +10,10 @@ out_file <- if (dir.exists("../../results/appendix")) "../../results/appendix/ta
 reg <- read_csv("registry.csv", col_types = cols(.default = "c"), na = character())
 lab <- read_csv("study_table_labels.csv", col_types = cols(.default = "c"), na = character())
 
-pool <- reg %>% filter(pool_status == "main")
-stopifnot(nrow(pool) == 126, !anyDuplicated(pool$id))   # [2026-11-13] 140 -> 142 (inv34, inv8 added)
-stopifnot(setequal(pool$id, lab$id), !anyDuplicated(lab$id))
+make_table <- function(STATUS, out_file, CAPTION, LABEL) {
+pool <- reg %>% filter(pool_status == STATUS, study_headline_term == "Y")
+stopifnot(nrow(pool) > 0, !anyDuplicated(pool$id))
+stopifnot(all(pool$id %in% lab$id), !anyDuplicated(lab$id))
 stopifnot(all(pool$family %in% c("TIE", "DEMOCRACY", "CAPITALISM")))
 
 d <- pool %>% left_join(lab, by = "id")
@@ -52,12 +53,12 @@ lines <- c(
   "\\setlength{\\tabcolsep}{1.5pt}",
   "\\setlength{\\LTcapwidth}{\\textwidth}",
   "\\begin{longtable}{@{}>{\\raggedright\\arraybackslash}p{3.1cm}>{\\raggedright\\arraybackslash}p{3.2cm}>{\\raggedright\\arraybackslash}p{2.7cm}>{\\raggedright\\arraybackslash}p{2.2cm}>{\\raggedright\\arraybackslash}p{2.4cm}>{\\raggedright\\arraybackslash}p{2.4cm}@{}}",
-  "\\caption{Studies pooled in the replication sweep.}\\label{tab:sweep_studies}\\\\",
+  paste0("\\caption{", CAPTION, "}\\label{", LABEL, "}\\\\"),
   "\\toprule",
   "Study & Key variable replicated & Outcome & Unit & Estimator & Published model \\\\",
   "\\midrule",
   "\\endfirsthead",
-  "\\multicolumn{6}{@{}l}{\\textit{Table \\ref{tab:sweep_studies} continued}} \\\\",
+  paste0("\\multicolumn{6}{@{}l}{\\textit{Table \\ref{", LABEL, "} continued}} \\\\"),
   "\\toprule",
   "Study & Key variable replicated & Outcome & Unit & Estimator & Published model \\\\",
   "\\midrule",
@@ -65,7 +66,7 @@ lines <- c(
   "\\midrule \\multicolumn{6}{r@{}}{\\textit{Continued on next page}} \\\\",
   "\\endfoot",
   "\\bottomrule",
-  "\\multicolumn{6}{@{}p{\\linewidth}@{}}{\\textit{Note:} UDY = undirected dyad-years; DDY = directed dyad-years; PRD = politically relevant dyad-years. Published model is the model that carries the headline claim. ($t+1$) marks outcomes measured one year after the predictors.} \\\\",
+  "\\multicolumn{6}{@{}p{\\linewidth}@{}}{\\textit{Note:} UDY = undirected dyad-years; DDY = directed dyad-years; PRD = politically relevant dyad-years. Published model is the model that carries the headline claim. ($t+1$) marks outcomes measured one year after the predictors. $^{\\dagger}$Rebuilt from public data; departures from the published specification are documented in the replication code. $^{\\ddagger}$The key variable links the dyad to allied dyads with disputes, so it embeds prior conflict in linked dyads. Models reported only in an online appendix, supplement, or figure are cited as such.} \\\\",
   "\\endlastfoot"
 )
 for (f in c("TIE", "DEMOCRACY", "CAPITALISM")) {
@@ -78,6 +79,11 @@ for (f in c("TIE", "DEMOCRACY", "CAPITALISM")) {
 lines <- c(lines, "\\end{longtable}", "\\endgroup")
 
 n_rows <- sum(str_detect(lines, " \\\\\\\\$") & !str_detect(lines, "multicolumn|^Study|toprule|midrule|caption"))
-stopifnot(n_rows == 126)   # [2026-11-13] was 140
+stopifnot(n_rows == nrow(pool))
 writeLines(lines, out_file)
 cat("wrote", out_file, "rows", n_rows, "| by family:", paste(names(table(d$family)), table(d$family), collapse = " "), "\n")
+}
+# [2026-11-14] main pool (main text) and the expanded set's outcome-overlap studies (appendix footnote)
+make_table("main", out_file, "Studies pooled in the replication sweep.", "tab:sweep_studies")
+make_table("outcome_overlap", sub("tableA_sweep_studies", "tableA_sweep_overlap", out_file),
+           "Studies in the expanded set whose outcome codes every year of a dispute.", "tab:sweep_overlap")

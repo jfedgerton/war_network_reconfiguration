@@ -35,7 +35,8 @@ fit_re <- function(rhs, dat, grp, label) {
   list(b = unname(ct[TIE, 1]), se = unname(ct[TIE, 2]), p = unname(ct[TIE, 4]), n = nobs(m), ct = ct)
 }
 
-base_ctrl <- function(cap) c("lagreimem", "lagdemdyad", cap, "laganyally", "lagdtrade", "distance", "s_wt_reg",
+# [2026-11-14] printed control "Potential target in REI alliance" (lagptreiall) added
+base_ctrl <- function(cap) c("lagreimem", "lagptreiall", "lagdemdyad", cap, "laganyally", "lagdtrade", "distance", "s_wt_reg",
                              "cwpceyrs", "x_spline1", "x_spline2", "x_spline3")
 b_pub <- -1.184
 pub_other <- c(lagreimem = -0.0606, lagdemdyad = 1.108, laganyally = 1.012, lagdtrade = 0.0059, s_wt_reg = -0.5895, cwpceyrs = -0.1393)

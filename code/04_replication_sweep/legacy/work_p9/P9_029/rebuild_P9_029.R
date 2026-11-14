@@ -36,7 +36,8 @@ n_t <- nrow(t); cat("TRIANGLE 1950-85 rows:", n_t, " dispute1 mean:", round(mean
 # ---- 2. UN affinity, lag 1 (affinity in year y -> dyad-year y+1) ----
 a <- zap_labels(read_dta(file.path(ROOT, "work_p4/X076/affinity_01242010.dta"))) %>% as.data.frame()
 stopifnot("s3un4608i" %in% names(a))
-a <- a %>% transmute(c1 = pmin(ccodea, ccodeb), c2 = pmax(ccodea, ccodeb), year = year + 1, aff_l1 = s3un4608i) %>% filter(c1 != c2) %>%
+# [2026-11-14] dispute1 is t+1, so affinity in the row year is the one-period lag (was year + 1 = double lag)
+a <- a %>% transmute(c1 = pmin(ccodea, ccodeb), c2 = pmax(ccodea, ccodeb), year = year, aff_l1 = s3un4608i) %>% filter(c1 != c2) %>%
   group_by(c1, c2, year) %>% summarise(aff_l1 = mean(aff_l1, na.rm = TRUE), .groups = "drop") %>% mutate(aff_l1 = ifelse(is.nan(aff_l1), NA, aff_l1))
 t <- t %>% left_join(a, by = c("c1", "c2", "year"))
 stopifnot(nrow(t) == n_t, all(is.na(t$aff_l1) | abs(t$aff_l1) <= 1))

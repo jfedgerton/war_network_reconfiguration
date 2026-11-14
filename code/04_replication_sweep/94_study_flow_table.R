@@ -30,6 +30,7 @@ grp <- c(pooled = "Pooled in the sweep",
          rebuilt_no_match = "Rebuilt from published sources; baseline did not match the article",
          not_reproduced = "Ported; did not reproduce the article",                      # [2026-11-08] audit
          author_null = "Author argues a null (reported separately)",                    # [2026-11-08] audit
+         outcome_overlap = "Outcome counts ongoing dispute years (appendix expanded set)",   # [2026-11-14]
          no_data = "No replication data located",
          infeasible_design = "Design cannot carry a conflict-history control",
          no_ids_for_history = "Design cannot carry a conflict-history control",

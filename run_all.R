@@ -311,6 +311,10 @@ step("03_figures", "03_mediation_table.R",
      "03 Mediation LaTeX table (appendix companion to Figure 7)")
 step("03_figures", "04_granger_forward_reverse.R",
      "Granger forward vs. reverse figure (from saved 07 specifications)")
+step("03_figures", "08_table_permutation.R",
+     "08 Permutation-test table (appendix; replaces fig_ms_permutation)")   # [2026-11-14]
+step("03_figures", "09_tables_falsification_war.R",
+     "09 Falsification and fatal-MID-sample tables (appendix; replace two figures)")   # [2026-11-14]
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGE 5: REPLICATION SWEEP  (04_replication_sweep)

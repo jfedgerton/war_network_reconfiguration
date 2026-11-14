@@ -24,7 +24,7 @@ nx <- function(x, k) ave(x, d$dyadid, FUN = function(z) c(z[-(1:k)], rep(NA, k))
 ev <- d$deadlyl == 1
 r1 <- mean(nx(d$deadyrs, 1)[ev] == 0, na.rm = TRUE); r2 <- mean(nx(d$deadyrs, 2)[ev] == 0, na.rm = TRUE)
 cat("P(deadyrs=0 at t+1 | event t) =", round(r1, 3), "; at t+2 =", round(r2, 3), "\n")
-lead_dv <- r2 > r1
+lead_dv <- TRUE   # [2026-11-14] data check: deadlyl matches COW MID-years at t+1 (0.97) vs t (0.59); the reset test cannot detect a lead (was r2 > r1)
 d$yr_dv <- d$year + as.integer(lead_dv)
 cat("DV treated as", if (lead_dv) "LEAD (t+1): history keyed to year+1" else "contemporaneous: history keyed to year", "\n")
 

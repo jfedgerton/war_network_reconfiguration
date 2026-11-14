@@ -159,10 +159,11 @@ PERM_MODE <- !is.na(PERM_DRAW)
 # [2026-11-10] MV_PERM_BELLIG=1: state draws keep all nine belligerent-dyad rules (system draws stay on "none");
 #   output goes to data/processed/mv_perm_bellig/ so the all-dyads draws in mv_perm/ are untouched.
 PERM_BELLIG <- PERM_MODE && Sys.getenv("MV_PERM_BELLIG", "0") == "1"
+PERM_ALT    <- PERM_MODE && Sys.getenv("MV_PERM_ALT", "0") == "1"   # [2026-11-12 churn_alt] state draws keep churn_alt only
 if (PERM_MODE) {
   stopifnot(PERM_DRAW >= 0)
   PERM_N_COMBOS <- as.integer(Sys.getenv("MV_PERM_N_COMBOS", "3"))
-  PERM_OUT_DIR  <- here::here("data", "processed", if (PERM_BELLIG) "mv_perm_bellig" else "mv_perm")
+  PERM_OUT_DIR  <- here::here("data", "processed", paste0(if (PERM_BELLIG) "mv_perm_bellig" else "mv_perm", if (PERM_ALT) "_alt" else ""))
   dir.create(PERM_OUT_DIR, recursive = TRUE, showWarnings = FALSE)
   CHECKPOINT_DIR <- file.path(tempdir(), sprintf("mv_perm_ckpt_%04d", PERM_DRAW))
   unlink(CHECKPOINT_DIR, recursive = TRUE)
@@ -2484,7 +2485,8 @@ if (PERM_MODE) {
   if (!"extra_control" %in% names(specs_df)) specs_df$extra_control <- "none"
   pd <- specs_df |>
     dplyr::filter(is.na(fit_status) | fit_status == "ok", PERM_BELLIG | bellig_rule == "none",   # [2026-11-10]
-                  !startsWith(model, "VAR_"), !is.na(coef), !is.na(pval)) |>
+                  !startsWith(model, "VAR_"), !is.na(coef), !is.na(pval),
+                  !(PERM_ALT & level == "state" & dv %in% c("churn", "log_churn"))) |>   # [2026-11-12 churn_alt]
     dplyr::mutate(extra_control = tidyr::replace_na(extra_control, "none"),
                   hypothesis = dplyr::if_else(level == "system", "H1", "H2"),
                   sig_pos = coef > 0 & pval / 2 < 0.10,

@@ -36,17 +36,17 @@ ctl <- create_dyadyears(directed = FALSE, subset_years = 1950:2000) %>% add_cont
          lncapratio = log(pmax(cinc1, cinc2) / pmin(cinc1, cinc2)),
          alliance = as.numeric(coalesce(cow_defense, 0) + coalesce(cow_neutral, 0) + coalesce(cow_entente, 0) > 0),
          majpow = as.numeric(cowmaj1 == 1 | cowmaj2 == 1), stateage = year - pmax(entry1, entry2),
-         contig = as.numeric(conttype %in% 1:4)) %>%
+         contig = as.numeric(conttype %in% 1:4), developed = as.numeric(ccode1 %in% dev | ccode2 %in% dev)) %>%   # [2026-11-14] printed Developed dummy
   arrange(ccode1, ccode2, year) %>% group_by(ccode1, ccode2) %>%
   mutate(development_low = ifelse(lag(year) == year - 1, lag(development_low_t), NA),
          democracy_low = ifelse(lag(year) == year - 1, lag(democracy_low_t), NA)) %>% ungroup() %>%
-  select(ccode1, ccode2, year, contig, development_low, democracy_low, lncapratio, alliance, majpow, stateage)
+  select(ccode1, ccode2, year, contig, development_low, democracy_low, lncapratio, alliance, majpow, stateage, developed)
 d <- ctl %>% inner_join(nd, by = c("ccode1", "ccode2", "year")) %>% filter(year >= 1951, contig == 1) %>%
   filter(!(ccode1 %in% dev & ccode2 %in% dev), !(ccode1 %in% micro), !(ccode2 %in% micro)) %>%
   mutate(py2 = py^2, py3 = py^3, dyad = ccode1 * 1000 + ccode2) %>% as.data.frame()
 rm(nd, ctl); invisible(gc())
 d <- d[is.finite(d$lncapratio) | is.na(d$lncapratio), ]
-rhs0 <- c("development_low", "democracy_low", "lncapratio", "alliance", "majpow", "stateage", "py", "py2", "py3")
+rhs0 <- c("development_low", "democracy_low", "developed", "lncapratio", "alliance", "majpow", "stateage", "py", "py2", "py3")
 KEY <- c("development_low", "democracy_low")
 fitter <- function(rhs, data) fit_bin("mid", rhs, data, "logit", "~dyad", terms = KEY)
 vars <- c("mid", rhs0, "dyad")

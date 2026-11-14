@@ -396,10 +396,8 @@ pa <- fals |>
   facet_wrap(~ layer, ncol = 3, scales = "free_x") +
   scale_fill_manual(values = c("Conflict history (past)"        = ACCENT,
                                "Future conflict (diagnostic)"   = ACCENT2)) +
-  labs(title = "Falsification: PAST conflict moves the estimate, FUTURE conflict does not",
-       subtitle = paste0("Attenuation of the tie-conflict coefficient, dyadic and monadic ",
-                         "processes separately.\nPositive = toward zero, negative = away from ",
-                         "zero. Future conflict cannot have shaped a past tie."),
+  # [2026-11-12] in-plot title/subtitle removed (caption carries them; the title overclaimed for IGO ties)
+  labs(title = NULL, subtitle = NULL,
        x = "Attenuation (%)", y = NULL, fill = NULL) +
   theme_bw(base_size = 11) +
   theme(panel.grid.minor = element_blank(),
@@ -419,10 +417,7 @@ pb <- perm |>
   facet_grid(measure ~ layer, scales = "free") +
   scale_fill_manual(name = NULL, values = c("Permuted draws (null)" = "gray75")) +
   scale_color_manual(name = NULL, values = c("Observed" = ACCENT2)) +
-  labs(title = sprintf("Permutation null (%d draws): observed movement is not mechanical",
-                       N_PERM),
-       subtitle = paste0("Attenuation when conflict history is randomly reassigned across ",
-                         "dyads within year,\ndyadic and monadic processes separately."),
+  labs(title = NULL, subtitle = NULL,   # [2026-11-12] caption carries the title
        x = "Attenuation (%)", y = "Permutations") +
   theme_bw(base_size = 11) +
   theme(panel.grid.minor = element_blank(),

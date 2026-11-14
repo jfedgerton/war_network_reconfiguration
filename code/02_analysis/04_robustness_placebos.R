@@ -653,7 +653,7 @@ p18 <- ggplot(perm_focal, aes(x = estimate)) +
             hjust = 1.25, vjust = 2, color = "black", size = 4) +
   facet_wrap(~ panel, scales = "free", nrow = 1) +
   labs(
-    title = "Permutation placebo",
+    title = NULL,   # [2026-11-12] caption carries the title
     x = "Coefficient under permuted conflict timing",
     y = "Count"
   ) +

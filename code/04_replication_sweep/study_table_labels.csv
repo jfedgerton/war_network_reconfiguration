@@ -4,47 +4,47 @@ X059,Imbalanced relations (lagged),Ongoing MID,PRD,Rare-events logit,Table 6 (MI
 X009,Lower democracy,Fatal MID onset,UDY,Logit,Table 1 Model 3,gibler2013dangerous
 X035,Political similarity,Fatal MID onset ($t+1$),PRD (non-directed),GEE logit,,goldsmith2008regime
 61,Trade dependence $\times$ initiator democracy,MID initiation,DDY,Logit,,gelpi2008democracy
-D2,Lower democracy,MID onset ($t+1$),UDY,Logit,"SI Table 7 (Model G4, corrected)",dafoe2011statistical
+D2,Lower democracy,MID involvement ($t+1$),UDY,Logit,"SI Table 7 (Model G4, corrected)",dafoe2011statistical
 X068,Joint GATT/WTO membership $\times$ WTO era,MID onset,PRD,Linear probability,Table 2 col.~1,chatagnier2021wto
 25,Ambassador turnover,MID onset,US--country dyad-years,2SLS,Table 1 col.~5 (2SLS),malis2021conflict
 68,Five-year change in IGO network structural similarity,MID initiation,DDY,Logit,Table 1 Model 4,kinne2013igo
 72,Coalition (SOLS) changes in exclusive allies,MID onset,Strategic rival dyad-years,Logit,Table 1 Model 2,dilorenzo2018domestic
 12,Trade concentration (lower),MID onset,UDY,Logit,Table 1 col.~2,kleinberg2012trade
-X033,Joint democracy,MID occurrence,Major-power dyad-years,Logit,Table 2$^{\dagger}$,rasler2001rivalries
+X033,Joint democracy,MID involvement,Major-power dyad-years,Logit,Table 2$^{\dagger}$,rasler2001rivalries
 114,Same community $\times$ low hierarchy,MID onset ($t+1$),UDY,Logit,Table 1 col.~1,beardsley2020hierarchy
-X037,Democracy mean $\times$ spread,Fatal MID onset,PRD,Logit,,altman2021interactive
+X037,Democracy mean $\times$ spread,Fatal MID involvement,PRD,Logit,,altman2021interactive
 X044,Border settlement,MID onset,Contiguous UDY,Logit,Table 2 Model 2,owsiak2019foundations
-101,Shared IGO membership,MID onset,UDY,Bayesian split-population probit,,xiang2017dyadic
+101,Shared IGO membership,MID involvement ($t+1$),UDY,Bayesian split-population probit,,xiang2017dyadic
 106,Betweenness centrality (log),MID initiation,DDY,Logit,,choi2023where
 13,Alliance formation (before/after),MID after alliance formation,DDY (10-year windows),CEM-matched logit,Online appendix (Figure 1),kenwick2015alliances
 10,Unconditional compellent alliance,MID initiation,DDY,Logit,Table 4 Model 5,benson2011unpacking
 X066,Trade through regional institutions,MID initiation,Enduring-rival directed dyads,GEE (linear),Model 2,aydin2010deterrent
 X043,Contract-intensive economy,Fatal MID onset,UDY,Logit,Table 2 Model 2,mousseau2018grasping
 X078,"PTA signed, not in force",MID onset,UDY,Logit,,peterson2015preferential
-86,Dependence (DependD),MID onset ($t+1$),UDY,Logit,Table 1 col.~3,hafnerburton2012war
-115,Out-group ties,Fatal MID,Dyad-years,Fixed-effects logit,Table 3 col.~1,edgerton2024cooperative
+86,Dependence (DependD),MID onset ($t+1$),UDY,Logit,Table 1 Model (3),hafnerburton2012war
+115,Out-group ties,Fatal MID involvement,Dyad-years,Fixed-effects logit,Table 3 col.~1,edgerton2024cooperative
 71,Same network community,Hostile MID onset ($t+1$),UDY,Logit,Table II col.~1,lupu2017networked
 X003,Strongman regime,MID initiation,DDY,Logit,Table 1 Model 2,weeks2012strongmen
 63,FDI inflows/GDP (lower),Fatal MID onset,UDY,Probit,,bussmann2010foreign
 X020,Lower democracy,MID onset,UDY,Logit,,park2014safe
 5,Defense pact with nuclear state,Fatal MID initiation,"PRD, directed",Probit,Table 2 Model 1,fuhrmann2014signaling
 100,Recipient $\times$ imposer trade dependence,MID recurrence,Settlement spells,Cox,,peterson2010all
-X069,Foreign policy affinity (three-step),War onset,UDY,Logit,,tomashevskiy2025friends
+X069,Foreign policy affinity (three-step),MID involvement ($t+1$),UDY,Logit,,tomashevskiy2025friends
 X032,Development squared,MID initiation,State-years,Logit,,boehmer2005violent
-X034,Recent democratization,MID initiation,PR DDY,Probit,,clare2007democratization
+X034,Redemocratization,MID initiation,PR DDY,Logit,,clare2007democratization
 54,PTA high-level organs,MID onset,PRD,Logit,,bearce2005commercial
 88,Signal triads,MID initiation,DDY,Logit,Table 1 Model 3,kinne2014third
 X021,Democratic community strength (squared),Fatal MID onset,UDY,Logit,Table 3 Model I,crescenzi2016built
 91,Initiator's allies' capability,MID initiation,PR DDY,Logit,Table 1 col.~3,kang2017capability
-X093,Multilateral openness ($t-4$),MID (hostility level $\geq$ 3),UDY,Logit,Table 3 col.~4,martin2008make
+X093,Multilateral openness ($t-4$),MID involvement (hostility level $\geq$ 3),UDY,Logit,Table 3 col.~4,martin2008make
 X067,Unconditional commitment $\times$ revisionism,MID initiation,DDY,Logit,Table IV Model 1C,benson2013ally
 X052,Regime change $\times$ democratization,MID onset,State-years,Logit,Table 2 Onset Model 2,daxecker2007perilous
 42,Bilateral FDI/GDP,Escalation of ICOW claim to fatal MID,Claim dyad-years,Logit,Table 2 Model 3,lee2012foreign
 62,Triadic trade (ln),MID involvement ($t+1$),UDY,Logit,Table I Model 1,dorussen2010trade
-X036,Inclusive democracy index,MID initiation,DDY,Random-effects logit,,joshi2015popular
+X036,Institutional democracy index,MID initiation,DDY,Random-effects logit,,joshi2015popular
 X014,Democracy $\times$ growth,Fatal MID initiation ($t+1$),DDY,Logit,Table 1 col.~3,oneal2006diversionary
 119,Integrated structural equivalence (lagged),MID under way,UDY,Logit,Table 2 Model 3,maoz2006structural
-55,Alliance formation,MID initiation,PRD (non-directed),Bivariate probit,Table I bivariate probit 2,kimball2006alliance
+55,Alliance formation,Reciprocated use-of-force MID,PRD (non-directed),Bivariate probit,Table I bivariate probit 2,kimball2006alliance
 14,Target has defensive ally,MID initiation,DDY,CEM-matched logit,Online appendix Table A1,morrow2017defensive
 1,Target has defensive ally,MID initiation,DDY,GEE logit,Table 1 Model 2,leeds2003alliances
 X092,Lower democracy,MID involvement,PRD,GEE logit,,goldsmith2006universal
@@ -59,9 +59,9 @@ X061,Ally credibility,MID initiation,DDY,Probit,Table 1 (H2 model),johnson2015ca
 118,Prestige difference,MID involvement ($t+1$),UDY,Logit,Table 1 col.~2,hafnerburton2006power
 65,Trade (log),Fatal MID,UDY,Two-stage probit,Table 3 col.~3 (conflict eq.),hegre2010trade
 15,Target pact formed after birth,MID initiation,DDY,Logit,Online appendix (Figure 2),kenwick2017defense
-C2,Lower democracy,MID onset ($t+1$),PRD,Logit,Table 2 Model 1,choi2011re
+C2,Lower democracy,MID involvement ($t+1$),PRD,Logit,Table 2 Model 1,choi2011re
 11,Network centrality,MID initiation count ($t+1$),State-years,GEE negative binomial,Table 2 Model 1,kinne2012multilateral
-C1,Capital openness,MID onset ($t+1$),UDY,Logit,Table 1 Model 5,gartzke2007capitalist
+C1,Capital openness,MID involvement ($t+1$),UDY,Logit,Table 1 Model 5,gartzke2007capitalist
 C5,Contract-intensive economy,Fatal MID onset ($t+1$),UDY,Logit,Table 1 Model 3,mousseau2013democratic
 69,River treaty information exchange,Militarized river claim,River claim dyad-years,Logit,,mitchell2015effectiveness
 N06,Capability rank difference,Fatal MID initiation,DDY,Fixed-effects logit,Table 3 col.~3,edgerton2026PSRM
@@ -71,19 +71,19 @@ X031,New joint exercise with ally,MID escalation,DDY,Two-stage logit,Table 2 Mod
 32,Mutual optimism,MID onset,PRD,Logit,,bas2016mutual
 57,Shared REI alliance,MID initiation,DDY (Africa),Random-effects logit,,powers2006dispute
 103,Contiguous defensive ally (any),MID initiation,DDY,Probit,Table 1 col.~1,bak2018alliance
-P8_008,US security subordination (status-quo eq.; + = less challenge),Conflict initiation,DDY,Strategic probit,Table 3 (challenge equation),nieman2016return
+P8_008,US security subordination (status-quo eq.; + = less challenge),Conflict initiation,DDY,Strategic probit,Table III (status-quo equation),nieman2016return
 P8_017,Accountability,Threat or use of force,Territorial dispute decision points,Multinomial logit,,huth2002domestic
-P8_019,Single-party dyad,MID involvement,UDY,Logit,Table 3 Model 4,peceny2002dictatorial
+P8_019,Single-party dyad,MID onset,UDY,Logit,Table 3 Model 4,peceny2002dictatorial
 P8_033,Revolutionary personalist regime,MID initiation,DDY,Logit,,colgan2015revolution
 P8_049,Industry share (higher),Fatal MID onset,UDY,Logit,Table 2 Model 1,chatagnier2016modern
-P8_036,Regime dissimilarity $\times$ democratic strength,MID,Intra-regional dyad-years,Multilevel logit,,mccallister2016beyond
-P8_048,Lower development,MID occurrence,Contiguous UDY,Logit,Table I$^{\dagger}$,ekmekci2014democratic
+P8_036,Regime dissimilarity $\times$ democratic strength,MID involvement,Intra-regional dyad-years,Multilevel logit,,mccallister2016beyond
+P8_048,Lower development,MID involvement,Contiguous UDY,Logit,Table I$^{\dagger}$,ekmekci2014democratic
 P8_031,Systemic development (world energy per capita),Fatal MID onset,UDY,Rare-events logit,Table 3 Model 14,gartzke2014under
 P8_046,Target public property,War targeting,DDY,Logit,Table 2 col.~1,mcdonald2010capitalism
 P8_030,Net democracy,Escalation under IO opposition,Dispute-months,Selection ordered probit,Table 1,chiba2014institutional
 P8_012,Trade $\times$ nationalist leader,MID onset,UDY,Logit,Table 1 Model 4$^{\dagger}$,choi2023liberal
 P8_042,Democratic transition (pooled ATT),MID participation,State-years,Panel matching DiD,,boldt2026democratic
-P8_003,Trade/GDP (lower),MID onset (selection equation),Dyad-years,Heckman probit,Table 1 Model 3 (selection eq.),goldsmith2013international
+P8_003,Trade/GDP (lower),MID onset ($t+1$) (selection equation),Dyad-years,Heckman probit,Table 1 Model 3 (selection eq.),goldsmith2013international
 P8_035,Target capability $\times$ military regime,MID initiation,DDY,Logit,,bak2016who
 P8_050,Both contractualist or axial economy,Fatal MID,UDY,Logit,,mousseau2019four
 P8_020,Political participation,MID initiation,State-years (democracies),GEE probit,,reiter2002public
@@ -96,14 +96,14 @@ P8_022,Coalition size $\times$ capabilities,War involvement given dispute,State-
 P9_028,Shared IGOs,MID involvement,PRD,Probit,Table 1$^{\dagger}$,russett1998third
 P9_029,UN affinity,MID involvement,PRD,Logit,Table 1 Model IIa$^{\dagger}$,gartzke1998kant
 P9_040,Community status deficit,MID initiation,DDY,Rare-events logit,,renshon2016status
-P9_043,Intra-industry trade,Fatal MID ($t+1$),UDY,Logit,,peterson2012beyond
+P9_043,Intra-industry trade,Fatal MID involvement ($t+1$),UDY,Logit,,peterson2012beyond
 P9_047,PTA trade distortion,MID onset ($t+1$),UDY,Probit,,peterson2015insiders
 P9_048,Oil dependence $\times$ network degree,MID initiation,"PRD, directed",Logit (state FE),,bareis2024interstate
-P9_050,Extended trade dependence $\times$ alliance centrality,MID initiation,DDY,Logit,Table 1 Model 1,li2026extended
+P9_050,Extended trade dependence $\times$ alliance centrality,MID involvement (side A),DDY,Logit,Table 1 Model 1,li2026extended
 P9_051,Target's own reputation as unreliable ally,MID targeting,DDY,Logit,,rahman2026reliability
 P9_053,UN Security Council membership,MID on initiating side (incl.\ joiners),"PRD, directed",Logit,,smith2023un
 P9_056,Target pact from birth,War initiation,DDY,Logit,Table 2 Model 7,choi2025alliances
-P9_061,Year $\times$ joint democracy,MID,PRD,Logit,Table 3 (dynamic model)$^{\dagger}$,cederman2001back
+P9_061,Year $\times$ joint democracy,MID involvement,PRD,Logit,Table 3 (dynamic model)$^{\dagger}$,cederman2001back
 P9_064,Winning coalition $\times$ power,MID initiation ($t+1$),DDY,Logit,,anderson2010accountability
 P9_062,Joint civil-society participation,Fatal MID,UDY,Logit,Supplement Table SF-3 col.~3$^{\dagger}$,hegre2020civil
 P9_068,Africa $\times$ lower democracy,MID onset,UDY,Rare-events logit,Table 1 col.~2$^{\dagger}$,henderson2009disturbing
@@ -112,9 +112,9 @@ P9_079,Third-party sanctions on target,MID initiation ($t+1$),DDY,Logit,,peterso
 P9_080,Ally power change ($\geq$30\%),MID initiation,DDY,Probit,Table 2 Model 1$^{\dagger}$,johnson2021power
 P9_085,Developed democracy,MID involvement ($t+1$),UDY,Logit,Table 1 Model 3$^{\dagger}$,mousseau2000market
 P9_082,Democratic IGOs,Fatal MID onset ($t+1$),UDY,Logit,Table 2$^{\dagger}$,pevehouse2006democratic
-P9_087,Great-power democracy $\times$ democracy,MID onset,UDY,Logit,Table 6 col.~1$^{\dagger}$,McDonald_2015_IO
+P9_087,Great-power-supported democracy $\times$ democracy,MID onset,UDY,Logit,Table 6 col.~1$^{\dagger}$,McDonald_2015_IO
 P9_089,Lower democracy (instrumented),MID involvement,PRD,Two-stage probit,Table 4 Model 1$^{\dagger}$,reuveny2003joint
-P9_092,Shared gender-equal IOs,MID onset,PRD,Random-effects logit,,millerd2023peaceful
+P9_092,Shared gender-equal IOs,MID involvement,PRD,Random-effects logit,,millerd2023peaceful
 P9_093,Third-order alliance tie$^{\ddagger}$,MID onset,UDY,Logit,Table 2$^{\dagger}$,gartzke2022ties
 P9_094,Arms transfers,MID initiation,State-years,Two-stage probit (2SCML),Table 2 Model 2$^{\dagger}$,krause2004hazardous
 ADD_T01,PTA centrality (autocratic challenger),MID initiation,DDY,Logit,Table I Model 4,mazumder2017autocracies

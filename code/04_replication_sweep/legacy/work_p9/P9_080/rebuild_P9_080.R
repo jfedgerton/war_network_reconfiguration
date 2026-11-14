@@ -42,7 +42,7 @@ de <- de %>% left_join(cinc %>% rename(ca = cinc), by = c("y" = "ccode", "year")
 cat("defense edges:", nrow(de), " power-change share:", round(mean(de$pc, na.rm = TRUE), 3), " missing pc:", sum(is.na(de$pc)), "\n")
 # per target-year aggregates over ALL its defense allies (corrected below when the challenger is one of them)
 ta <- de %>% group_by(x, year) %>% arrange(desc(age), .by_group = TRUE) %>%
-  summarise(n_al = n(), npc = sum(pc, na.rm = TRUE), scinc = sum(ca, na.rm = TRUE), ssum = sum(sxy, na.rm = TRUE), sn = sum(!is.na(sxy)),   # missing CINC: ally contributes 0
+  summarise(n_al = n(), npc = sum(pc, na.rm = TRUE), nna = sum(is.na(pc)), scinc = sum(ca, na.rm = TRUE), ssum = sum(sxy, na.rm = TRUE), sn = sum(!is.na(sxy)),   # missing CINC: ally contributes 0
              age1 = age[1], arg1 = y[1], age2 = if (n() > 1) age[2] else NA_real_, .groups = "drop")
 # challenger offense / neutrality partners and offense partners' CINC
 ca_ <- a %>% left_join(cinc, by = c("y" = "ccode", "year")) %>% group_by(x, year) %>%
@@ -52,9 +52,10 @@ d <- d %>% left_join(ta, by = c("ccode2" = "x", "year")) %>% left_join(ca_, by =
   left_join(a %>% select(x, y, year, defCT = def, offCT = off, neuCT = neu), by = c("ccode2" = "x", "ccode1" = "y", "year")) %>%   # T's pact with C
   left_join(de %>% select(x, y, year, pcC = pc, ageC = age, caC = ca, sC = sxy), by = c("ccode2" = "x", "ccode1" = "y", "year"))
 stopifnot(nrow(d) == n0)
-d <- d %>% mutate(across(c(n_al, npc, scinc, noff, nneu, soff, defCT, offCT, neuCT), ~coalesce(.x, 0)), isC = coalesce(defCT, 0) == 1) %>%
+d <- d %>% mutate(across(c(n_al, npc, nna, scinc, noff, nneu, soff, defCT, offCT, neuCT), ~coalesce(.x, 0)), isC = coalesce(defCT, 0) == 1) %>%
   mutate(n_rel = n_al - isC,                                          # relevant allies exclude the challenger
-         allypc = as.numeric(npc - ifelse(isC, coalesce(pcC, 0), 0) > 0),
+         allypc = ifelse(npc - ifelse(isC, coalesce(pcC, 0), 0) > 0, 1,   # [2026-11-14 P3] unknown ally power change -> NA, not 0
+                         ifelse(nna - as.numeric(isC & is.na(pcC)) > 0, NA_real_, 0)),
          allycinc = scinc - ifelse(isC, coalesce(caC, 0), 0),
          allyage = ifelse(isC & arg1 == ccode1, age2, age1),
          chal_off = as.numeric(noff - offCT > 0), chal_neu = as.numeric(nneu - neuCT > 0),

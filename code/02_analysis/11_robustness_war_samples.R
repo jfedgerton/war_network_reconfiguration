@@ -262,11 +262,18 @@ fit_sys <- function(d, sample_label) {
     m <- tryCatch(lm(f, data = d), error = function(e) NULL)
     if (is.null(m)) return(NULL)
     cf <- coef(m); vv <- vcov(m)
+    # [2026-11-12] verification only: Newey-West HAC SE (lag 5), as in main-text Table 2 (fixest, panel.id unit + year).
+    # The plotted CI still uses the classical SE; nw_* columns are written to the CSV and printed below.
+    m_nw <- tryCatch(fixest::feols(f, data = dplyr::mutate(d, unit = 1L), panel.id = ~ unit + year,
+                                   vcov = fixest::NW(lag = 5)), error = function(e) NULL)
+    nw_se <- if (is.null(m_nw)) NA_real_ else unname(fixest::se(m_nw)[iv_col])
+    stopifnot(is.null(m_nw) || abs(unname(coef(m_nw)[iv_col]) - unname(cf[iv_col])) < 1e-8)   # same point estimate
     tibble(level = "system", sample = sample_label,
            iv = iv_col, iv_label = iv_lab,
            estimate = unname(cf[iv_col]),
            se       = sqrt(diag(vv)[iv_col]),
-           n_obs    = nobs(m))
+           n_obs    = nobs(m),
+           nw_se    = nw_se)
   })
 }
 
@@ -338,28 +345,56 @@ st_rows <- bind_rows(
   fit_state(st_big,   "(3) MID participants only")
 )
 
-# [2026-11-12 fatal] State-level analogue of the system cut points in panel A: keep state-years whose
-# calendar year had >= thr fatal MIDs system-wide (same SYSTEM_FATAL_MINS and the same year-t
-# fatal_mid_count as the system restriction above). Feeds the single-row appendix figure (05, B3).
-# Reads the unfiltered system file, so years the system panel drops (no JS) can still enter; same >= thr rule.
-sys_fatal_by_year <- readRDS(file.path(OUTPUT_DIR, "system_analysis_data.rds")) |>
-  select(year, sys_fatal_mid_count = fatal_mid_count)
-stopifnot(!anyDuplicated(sys_fatal_by_year$year))
-for (thr in SYSTEM_FATAL_MINS) {
-  keep_years <- sys_fatal_by_year$year[sys_fatal_by_year$sys_fatal_mid_count >= thr]
-  d <- state_churn |> filter(year %in% keep_years)
-  cat(sprintf("  State   fatal-MID years:  %d state-years in %d years (>= %d fatal MIDs system-wide)\n",
-              nrow(d), length(unique(d$year)), thr))
-  st_rows <- bind_rows(st_rows, fit_state(d, sprintf("(4) Fatal MIDs >= %d", thr)))
+# [2026-11-12 fatality] Fig 11 panel B: raise the FATALITY threshold that defines a fatal MID. The main measure counts
+# MID onsets whose dispute has COW fatality level >= 1 (any battle deaths; fatality1 or fatality2 > 0). Here the IV is
+# log(1 + MID onsets at t-1 with max(fatality1, fatality2) >= k) for k = 2 (26+ deaths), 3 (101+), 4 (251+); full sample,
+# same controls and FE as the main fatal-onset model. Rows are stored with iv = "log_fatal_onset_lag1" so the figure
+# script can place them beside the main estimate; iv_label records the threshold.
+# (Earlier tries kept in tmp/backup_20261112_fatal/: _v2_sysyears = system-year cuts, _v3_hostlev = hostility cuts.)
+FATALITY_MINS <- c(2L, 3L, 4L)
+stopifnot(all(c("fatality1", "fatality2") %in% names(dyad_data)))
+fat_onsets <- dyad_data |>
+  filter(ccode1 < ccode2, cowmidongoing == 1, cowmidonset == 1) |>
+  mutate(fat = pmax(coalesce(as.numeric(fatality1), 0), coalesce(as.numeric(fatality2), 0))) |>   # -9 (missing) -> below 1
+  select(ccode1, ccode2, year, fat) |>
+  pivot_longer(c(ccode1, ccode2), values_to = "ccode") |>
+  group_by(ccode, year) |>
+  summarise(n_fat1 = sum(fat >= 1), n_fat2 = sum(fat >= 2), n_fat3 = sum(fat >= 3), n_fat4 = sum(fat >= 4),
+            .groups = "drop") |>
+  mutate(year = year + 1L)                                     # value at t-1
+st_fat <- state_churn |>
+  select(-any_of(c("n_fat1", "n_fat2", "n_fat3", "n_fat4"))) |>
+  left_join(fat_onsets, by = c("ccode", "year")) |>
+  mutate(across(c(n_fat1, n_fat2, n_fat3, n_fat4), ~ ifelse(is.na(fatal_onset_lag1), NA_real_, coalesce(as.numeric(.x), 0))))
+stopifnot(nrow(st_fat) == nrow(state_churn),
+          # k = 1 must reproduce the main fatal-onset count exactly
+          isTRUE(all.equal(st_fat$n_fat1, st_fat$fatal_onset_lag1)),
+          all(st_fat$n_fat4 <= st_fat$n_fat3, st_fat$n_fat3 <= st_fat$n_fat2, st_fat$n_fat2 <= st_fat$n_fat1, na.rm = TRUE))
+for (k in FATALITY_MINS) {
+  col <- paste0("n_fat", k)
+  st_fat$iv_k <- log1p(st_fat[[col]])
+  cat(sprintf("  State   fatality >= %d:  %d state-years with such an onset at t-1\n", k, sum(st_fat[[col]] > 0, na.rm = TRUE)))
+  stopifnot(sum(st_fat[[col]] > 0, na.rm = TRUE) >= 30)
+  m <- feols(as.formula(paste0("churn ~ iv_k + ", CTRL_FATAL, " | ccode + year")), data = st_fat, cluster = ~ ccode + year)
+  st_rows <- bind_rows(st_rows,
+    tibble(level = "state", sample = sprintf("(4) Fatality >= %d", k), iv = "log_fatal_onset_lag1",
+           iv_label = sprintf("log(1 + MID onsets with fatality level >= %d) (t-1)", k),
+           estimate = unname(coef(m)["iv_k"]), se = unname(sqrt(diag(vcov(m))["iv_k"])), n_obs = nobs(m)))
 }
-# 3 thresholds x 4 state IVs; fail loudly if a thin sample dropped a fit or the IV
-stopifnot(sum(grepl("^\\(4\\)", st_rows$sample)) == 3 * length(state_ivs), !anyNA(st_rows$estimate))
+st_fat$iv_k <- NULL
+# 3 thresholds; fail loudly if a fit returned NA
+stopifnot(sum(grepl("^\\(4\\)", st_rows$sample)) == 3, !anyNA(st_rows$estimate))
 
 results <- bind_rows(sys_rows, st_rows) |>
   mutate(ci_low  = estimate - 1.96 * se,
          ci_high = estimate + 1.96 * se)
 
 print(results, digits = 4)
+# [2026-11-12] Newey-West check for the system panel of the appendix war-sample figure (log fatal MIDs, t-1)
+nw_chk <- results |> filter(level == "system", iv == "log_fatal_mid_count_lag1") |>
+  mutate(z_classical = estimate / se, z_nw = estimate / nw_se, p_nw = 2 * pnorm(-abs(z_nw)))
+cat("\nSystem panel, classical vs Newey-West (lag 5) z:\n"); print(nw_chk |> select(sample, n_obs, estimate, se, nw_se, z_classical, z_nw, p_nw), digits = 3)
+stopifnot(!anyNA(nw_chk$nw_se))
 
 write_csv(results,
           file.path(OUTPUT_DIR, "robustness_war_samples.csv"))
